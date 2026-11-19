@@ -1,105 +1,70 @@
 import env from '../config/env.js';
-import defaultAuthService from '../services/auth.service.js';
-import defaultTokenService from '../services/token.service.js';
-import { sendSuccess } from '../utils/response.js';
+import * as authService from '../services/auth.service.js';
+import { setAuthCookies, clearAuthCookies } from '../services/token.service.js';
+import { sendSuccess } from '../utils/http.js';
 
-export function createAuthController({
-  authService = defaultAuthService,
-  tokenService = defaultTokenService,
-} = {}) {
-  async function login(req, res) {
-    const { email, password } = req.body;
-    const result = await authService.login({
-      email,
-      password,
+export async function login(req, res) {
+  const { admin, accessToken, refreshToken } = await authService.login({
+    email: req.body.email,
+    password: req.body.password,
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+  });
+
+  setAuthCookies(res, { accessToken, refreshToken });
+
+  return sendSuccess(res, {
+    message: 'Authentication successful.',
+    data: { admin },
+  });
+}
+
+export async function refresh(req, res) {
+  const rawRefreshToken = req.cookies?.[env.cookie.refreshName];
+
+  try {
+    const { admin, accessToken, refreshToken } = await authService.refreshSession({
+      refreshToken: rawRefreshToken,
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     });
 
-    tokenService.setAuthCookies(res, {
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
-    });
+    setAuthCookies(res, { accessToken, refreshToken });
 
     return sendSuccess(res, {
-      statusCode: 200,
-      message: 'Authentication successful.',
-      data: {
-        admin: result.admin,
-      },
+      message: 'Session refreshed.',
+      data: { admin },
     });
-  }
-
-  async function refresh(req, res) {
-    const rawRefreshToken = req.cookies?.[env.cookie.refreshName];
-
-    try {
-      const result = await authService.refreshSession({
-        rawRefreshToken,
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      });
-
-      tokenService.setAuthCookies(res, {
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
-      });
-
-      return sendSuccess(res, {
-        statusCode: 200,
-        message: 'Session refreshed.',
-        data: {
-          admin: result.admin,
-        },
-      });
-    } catch (err) {
-      tokenService.clearAuthCookies(res);
-      throw err;
+  } catch (err) {
+    if (err?.statusCode === 401 || err?.statusCode === 403) {
+      clearAuthCookies(res);
     }
+    throw err;
   }
-
-  async function logout(req, res) {
-    const rawRefreshToken = req.cookies?.[env.cookie.refreshName];
-    await authService.logout({ rawRefreshToken });
-    tokenService.clearAuthCookies(res);
-
-    return sendSuccess(res, {
-      statusCode: 200,
-      message: 'Logged out successfully.',
-      data: null,
-    });
-  }
-
-  async function logoutAll(req, res) {
-    await authService.logoutAll({ adminId: req.admin.id });
-    tokenService.clearAuthCookies(res);
-
-    return sendSuccess(res, {
-      statusCode: 200,
-      message: 'Logged out from all devices.',
-      data: null,
-    });
-  }
-
-  async function getCurrentAdmin(req, res) {
-    const result = await authService.getCurrentAdmin({ adminId: req.admin.id });
-    return sendSuccess(res, {
-      statusCode: 200,
-      message: 'Authenticated admin retrieved.',
-      data: {
-        admin: result.admin,
-      },
-    });
-  }
-
-  return {
-    login,
-    refresh,
-    logout,
-    logoutAll,
-    getCurrentAdmin,
-  };
 }
 
-const authController = createAuthController();
-export default authController;
+export async function logout(req, res) {
+  try {
+    await authService.logout({ refreshToken: req.cookies?.[env.cookie.refreshName] });
+  } finally {
+    clearAuthCookies(res);
+  }
+
+  return sendSuccess(res, { message: 'Logged out successfully.', data: null });
+}
+
+export async function logoutAll(req, res) {
+  await authService.logoutAll({ adminId: req.admin.id });
+  clearAuthCookies(res);
+
+  return sendSuccess(res, { message: 'Logged out from all devices.', data: null });
+}
+
+export async function getMe(req, res) {
+  const admin = await authService.getCurrentAdmin({ adminId: req.admin.id });
+
+  return sendSuccess(res, {
+    message: 'Authenticated admin retrieved.',
+    data: { admin },
+  });
+}

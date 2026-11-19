@@ -1,5 +1,10 @@
 import sequelize from '../config/database.js';
-import defineAdminModel from './admin.model.js';
+import defineAdminModel, {
+  ADMIN_ROLES,
+  ALL_ADMIN_ROLES,
+  ADMIN_STATUSES,
+  ALL_ADMIN_STATUSES,
+} from './admin.model.js';
 import defineAdminRefreshTokenModel from './adminRefreshToken.model.js';
 
 const Admin = defineAdminModel(sequelize);
@@ -15,5 +20,21 @@ AdminRefreshToken.belongsTo(Admin, {
   as: 'admin',
 });
 
-export { sequelize, Admin, AdminRefreshToken };
-export default { sequelize, Admin, AdminRefreshToken };
+export {
+  sequelize,
+  Admin,
+  AdminRefreshToken,
+  ADMIN_ROLES,
+  ALL_ADMIN_ROLES,
+  ADMIN_STATUSES,
+  ALL_ADMIN_STATUSES,
+};
+export default {
+  sequelize,
+  Admin,
+  AdminRefreshToken,
+  ADMIN_ROLES,
+  ALL_ADMIN_ROLES,
+  ADMIN_STATUSES,
+  ALL_ADMIN_STATUSES,
+};

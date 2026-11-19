@@ -3,39 +3,41 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import env from './config/env.js';
-import defaultApiRouter from './routes/index.js';
+import { sequelize } from './models/index.js';
+import authRoutes from './routes/auth.routes.js';
 import { notFoundHandler, errorHandler } from './middlewares/error.middleware.js';
+import { sendSuccess, sendError } from './utils/http.js';
 
-export function createApp({ apiRouter = defaultApiRouter, registerExtraRoutes = null } = {}) {
-  const app = express();
+const app = express();
 
-  if (env.trustProxy > 0) {
-    app.set('trust proxy', env.trustProxy);
-  }
-
-  app.use(helmet());
-  app.use(
-    cors({
-      origin: env.adminFrontendUrl,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-    }),
-  );
-  app.use(express.json({ limit: '16kb' }));
-  app.use(cookieParser());
-
-  app.use('/api/v1', apiRouter);
-
-  if (typeof registerExtraRoutes === 'function') {
-    registerExtraRoutes(app);
-  }
-
-  app.use(notFoundHandler);
-  app.use(errorHandler);
-
-  return app;
+if (env.trustProxy > 0) {
+  app.set('trust proxy', env.trustProxy);
 }
 
-const app = createApp();
+app.use(helmet());
+app.use(cors({ origin: env.adminFrontendUrl, credentials: true }));
+app.use(express.json({ limit: '100kb' }));
+app.use(cookieParser());
+
+app.get('/api/v1/health', async (_req, res) => {
+  try {
+    await sequelize.authenticate();
+    return sendSuccess(res, {
+      message: 'Admin backend is healthy',
+      data: { service: 'admin-backend', status: 'ok', database: 'connected' },
+    });
+  } catch {
+    return sendError(res, {
+      statusCode: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Database connectivity check failed.',
+    });
+  }
+});
+
+app.use('/api/v1/auth', authRoutes);
+
+app.use(notFoundHandler);
+app.use(errorHandler);
+
 export default app;

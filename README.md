@@ -1,62 +1,57 @@
 # Japaika Admin Backend (`admin-backend/`)
 
-Isolated administrative and operations backend API for the **Japaika E-commerce Platform**, built with Node.js, Express 5 (ES Modules), MySQL, and Sequelize ORM.
+Administrative and operations REST API for the standalone Japaika E-commerce platform, built with **Node.js (ES Modules)**, **Express 5**, **MySQL**, and **Sequelize ORM**.
+
+> **Migration Governance:** `user-backend/` is the designated owner of all shared MySQL migrations (`user-backend/migrations/`). `admin-backend/` consumes the shared schema without running separate migrations or `sequelize.sync({ force/alter })`.
 
 ---
 
-## 1. Architecture & Security Highlights
+## Setup
 
-- **Strict Auth Isolation**: Uses dedicated `admins` and `admin_refresh_tokens` tables (`CHAR(36)` UUID v4), distinct `ADMIN_JWT_*` secrets, `iss: "japaika-admin-backend"`, `aud: "japaika-admin"`, `subType: "admin"`, and `japaika_admin_*` `HttpOnly` cookies. Customer tokens from `user-backend` are never accepted.
-- **Email + Password (`bcryptjs`)**: Constant-time password verification with dummy-hash comparison on unknown emails to prevent timing-based account enumeration.
-- **No Public Registration**: Admin accounts cannot self-register via public endpoints. The initial `super_admin` is provisioned idempotently via `npm run seed:super-admin` or startup environment variables.
-- **Rotating Refresh Tokens & Reuse Detection**: Refresh tokens are stored as SHA-256 hashes in `admin_refresh_tokens` linked by `family_id`. Replaying a previously rotated token immediately revokes the entire session family (`401 REFRESH_TOKEN_REUSE_DETECTED`).
-- **Role-Based Access Control (RBAC)**: `requireRoles(...allowedRoles)` enforces `super_admin`, `catalog_manager`, `operations_manager`, and `support_moderator` permissions on protected routes.
-- **Shared Database Migration Governance**: `user-backend/` owns all shared MySQL migrations (`user-backend/migrations/`). `admin-backend/` does not run conflicting migrations or `sequelize.sync({ force/alter })`.
-
----
-
-## 2. Setup & Configuration
-
-1. Install dependencies:
+1. **Install dependencies**:
    ```bash
    npm install
    ```
-2. Copy `.env.example` to `.env` and configure your local MySQL credentials and admin JWT secrets:
+
+2. **Configure environment variables**:
+   Create `.env` (using `.env.example` as a reference) with your local MySQL credentials (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) and admin JWT secrets (`ADMIN_JWT_ACCESS_SECRET`, `ADMIN_JWT_REFRESH_SECRET`).
+
+3. **Ensure shared MySQL migrations are applied** (from `../user-backend/`):
    ```bash
-   cp .env.example .env
+   npm run migrate
    ```
-3. Ensure shared MySQL migrations have been executed from `user-backend/`.
-4. (Optional) Seed the initial Super Admin account:
-   - Set `INITIAL_SUPER_ADMIN_EMAIL`, `INITIAL_SUPER_ADMIN_PASSWORD`, and `INITIAL_SUPER_ADMIN_NAME` in `.env`, then run:
+
+4. **Seed the initial Super Admin account** *(idempotent; no public registration endpoint exists)*:
+   Set `INITIAL_SUPER_ADMIN_EMAIL`, `INITIAL_SUPER_ADMIN_PASSWORD`, and `INITIAL_SUPER_ADMIN_NAME` in `.env`, then run:
    ```bash
    npm run seed:super-admin
    ```
-5. Start the development server (default port `5001`):
+
+5. **Start the server** (default port `5001`):
    ```bash
-   npm start
+   npm run dev   # Development (nodemon)
+   npm start     # Production (node)
    ```
 
 ---
 
-## 3. Implemented Endpoints (`/api/v1`)
+## Automated Tests
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/health` | Public | Liveness & MySQL connectivity check |
-| `POST` | `/api/v1/auth/login` | Public (rate-limited) | Email + Password admin login; sets `HttpOnly` cookies |
-| `POST` | `/api/v1/auth/refresh` | `japaika_admin_refresh` cookie | Rotates refresh token & issues new access + refresh cookies |
-| `POST` | `/api/v1/auth/logout` | Optional | Revokes current refresh token & clears auth cookies |
-| `POST` | `/api/v1/auth/logout-all` | `japaika_admin_access` cookie | Revokes all active sessions for the current admin |
-| `GET` | `/api/v1/auth/me` | `japaika_admin_access` cookie | Returns currently authenticated admin profile & RBAC role |
-
-See [../docs/ADMIN_API_CONTRACTS.md](../docs/ADMIN_API_CONTRACTS.md) for full request/response contracts.
-
----
-
-## 4. Running Automated Tests
-
-Run the isolated unit and integration test suite (requires no running MySQL server and never modifies shared databases):
+Run all unit and integration tests (uses unique synthetic test emails against local MySQL with automatic per-test cleanup):
 
 ```bash
 npm test
 ```
+
+---
+
+## Implemented Endpoints (`/api/v1`)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/health` | Public | Service & MySQL connectivity check |
+| `POST` | `/api/v1/auth/login` | Public | Email + Password admin login; sets `HttpOnly` JWT cookies |
+| `POST` | `/api/v1/auth/refresh` | Refresh Cookie | Rotate refresh token & issue fresh access + refresh cookies |
+| `POST` | `/api/v1/auth/logout` | Optional Cookie | Revoke current refresh token & clear auth cookies |
+| `POST` | `/api/v1/auth/logout-all` | Access Cookie | Revoke all active refresh tokens for the admin |
+| `GET` | `/api/v1/auth/me` | Access Cookie | Get currently authenticated admin profile & RBAC role |

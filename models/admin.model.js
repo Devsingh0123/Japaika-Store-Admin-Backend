@@ -1,5 +1,20 @@
 import { DataTypes } from 'sequelize';
-import { ADMIN_ROLES, ALL_ADMIN_ROLES, ADMIN_STATUSES, ALL_ADMIN_STATUSES } from '../config/constants.js';
+
+export const ADMIN_ROLES = Object.freeze({
+  SUPER_ADMIN: 'super_admin',
+  CATALOG_MANAGER: 'catalog_manager',
+  OPERATIONS_MANAGER: 'operations_manager',
+  SUPPORT_MODERATOR: 'support_moderator',
+});
+
+export const ALL_ADMIN_ROLES = Object.freeze(Object.values(ADMIN_ROLES));
+
+export const ADMIN_STATUSES = Object.freeze({
+  ACTIVE: 'active',
+  SUSPENDED: 'suspended',
+});
+
+export const ALL_ADMIN_STATUSES = Object.freeze(Object.values(ADMIN_STATUSES));
 
 export default function defineAdminModel(sequelize) {
   return sequelize.define(
@@ -50,6 +65,6 @@ export default function defineAdminModel(sequelize) {
       createdAt: 'created_at',
       updatedAt: 'updated_at',
       deletedAt: 'deleted_at',
-    },
+    }
   );
 }

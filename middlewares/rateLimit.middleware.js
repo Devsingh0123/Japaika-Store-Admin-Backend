@@ -1,54 +1,42 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import env from '../config/env.js';
 import { normalizeEmail } from '../services/auth.service.js';
-import { sendError } from '../utils/response.js';
+import { sendError } from '../utils/http.js';
 
-function rateLimitHandler(_req, res) {
-  return sendError(res, {
-    statusCode: 429,
-    code: 'RATE_LIMIT_EXCEEDED',
-    message: 'Too many requests. Please try again later.',
-    details: [],
-  });
-}
-
-export function createLoginIpRateLimiter(overrides = {}) {
+function makeLimiter({ limit, message, keyGenerator }) {
   return rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 15,
-    standardHeaders: 'draft-7',
+    limit,
+    standardHeaders: 'draft-8',
     legacyHeaders: false,
-    handler: rateLimitHandler,
-    ...overrides,
+    skip: () => !env.isProd && process.env.DISABLE_RATE_LIMIT === 'true',
+    ...(keyGenerator ? { keyGenerator } : {}),
+    handler: (_req, res) =>
+      sendError(res, {
+        statusCode: 429,
+        code: 'RATE_LIMIT_EXCEEDED',
+        message,
+      }),
   });
 }
 
-export function createLoginAccountRateLimiter(overrides = {}) {
-  return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 5,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    keyGenerator: (req) => {
-      const ipKey = ipKeyGenerator(req.ip || '127.0.0.1');
-      const emailKey = normalizeEmail(req.body?.email) || 'unknown';
-      return `${ipKey}:${emailKey}`;
-    },
-    handler: rateLimitHandler,
-    ...overrides,
-  });
-}
+export const loginIpLimiter = makeLimiter({
+  limit: 15,
+  message: 'Too many login requests from this IP. Please try again later.',
+});
 
-export function createRefreshRateLimiter(overrides = {}) {
-  return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 30,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    handler: rateLimitHandler,
-    ...overrides,
-  });
-}
+export const loginAccountLimiter = makeLimiter({
+  limit: 5,
+  message: 'Too many login attempts for this account. Please try again later.',
+  keyGenerator: (req) => {
+    const ipKey = ipKeyGenerator(req.ip || '');
+    return typeof req.body?.email === 'string' && req.body.email.trim()
+      ? `${ipKey}:login:${normalizeEmail(req.body.email)}`
+      : ipKey;
+  },
+});
 
-export const loginIpRateLimiter = createLoginIpRateLimiter();
-export const loginAccountRateLimiter = createLoginAccountRateLimiter();
-export const refreshRateLimiter = createRefreshRateLimiter();
+export const refreshLimiter = makeLimiter({
+  limit: 30,
+  message: 'Too many session refresh requests. Please try again later.',
+});

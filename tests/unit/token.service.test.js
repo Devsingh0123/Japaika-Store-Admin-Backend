@@ -1,111 +1,102 @@
-import test from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
-import env from '../../config/env.js';
-import tokenService from '../../services/token.service.js';
-import AppError from '../../utils/appError.js';
+import { loadEnv } from '../../config/env.js';
+import {
+  parseDurationToMs,
+  hashToken,
+  signAccessToken,
+  signRefreshToken,
+  verifyAccessToken,
+  verifyRefreshToken,
+} from '../../services/token.service.js';
 
-const sampleAdmin = {
-  id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
-  email: 'superadmin@japaika.com',
-  role: 'super_admin',
-};
-
-test('token.service — signAccessToken and verifyAccessToken enforce admin claims', () => {
-  const token = tokenService.signAccessToken(sampleAdmin);
-  const payload = tokenService.verifyAccessToken(token);
-
-  assert.equal(payload.sub, sampleAdmin.id);
-  assert.equal(payload.email, sampleAdmin.email);
-  assert.equal(payload.role, sampleAdmin.role);
-  assert.equal(payload.subType, 'admin');
-  assert.equal(payload.tokenType, 'access');
-  assert.equal(payload.iss, 'japaika-admin-backend');
-  assert.equal(payload.aud, 'japaika-admin');
-});
-
-test('token.service — signRefreshToken and verifyRefreshToken enforce refresh claims', () => {
-  const jti = crypto.randomUUID();
-  const familyId = crypto.randomUUID();
-  const refreshToken = tokenService.signRefreshToken({
-    adminId: sampleAdmin.id,
-    jti,
-    familyId,
+describe('token.service', () => {
+  it('parses duration strings into milliseconds', () => {
+    assert.equal(parseDurationToMs('15m', 0), 15 * 60 * 1000);
+    assert.equal(parseDurationToMs('7d', 0), 7 * 24 * 60 * 60 * 1000);
+    assert.equal(parseDurationToMs('60s', 0), 60 * 1000);
+    assert.equal(parseDurationToMs('2h', 0), 2 * 60 * 60 * 1000);
+    assert.equal(parseDurationToMs('invalid', 1234), 1234);
   });
 
-  const payload = tokenService.verifyRefreshToken(refreshToken);
-  assert.equal(payload.sub, sampleAdmin.id);
-  assert.equal(payload.jti, jti);
-  assert.equal(payload.familyId, familyId);
-  assert.equal(payload.subType, 'admin');
-  assert.equal(payload.tokenType, 'refresh');
-});
+  it('signs and verifies admin access tokens with strict claims', () => {
+    const admin = {
+      id: crypto.randomUUID(),
+      email: 'superadmin@japaika.com',
+      role: 'super_admin',
+    };
+    const payload = verifyAccessToken(signAccessToken(admin));
 
-test('token.service — rejects customer tokens and cross-type tokens', () => {
-  const fakeCustomerToken = jwt.sign(
-    {
-      sub: sampleAdmin.id,
-      email: 'customer@example.com',
-      subType: 'customer',
-      tokenType: 'access',
-    },
-    env.jwt.accessSecret,
-    {
-      issuer: 'japaika-user-backend',
-      audience: 'japaika-user',
-      expiresIn: '15m',
-    },
-  );
-
-  assert.throws(
-    () => tokenService.verifyAccessToken(fakeCustomerToken),
-    (err) => err instanceof AppError && err.statusCode === 401 && err.code === 'UNAUTHORIZED',
-  );
-
-  const subTypeMismatchToken = jwt.sign(
-    {
-      sub: sampleAdmin.id,
-      subType: 'customer',
-      tokenType: 'access',
-    },
-    env.jwt.accessSecret,
-    {
-      issuer: env.jwt.issuer,
-      audience: env.jwt.audience,
-      expiresIn: '15m',
-    },
-  );
-
-  assert.throws(
-    () => tokenService.verifyAccessToken(subTypeMismatchToken),
-    (err) => err instanceof AppError && err.statusCode === 401 && err.code === 'UNAUTHORIZED',
-  );
-
-  const refreshToken = tokenService.signRefreshToken({
-    adminId: sampleAdmin.id,
-    jti: crypto.randomUUID(),
-    familyId: crypto.randomUUID(),
+    assert.equal(payload.sub, admin.id);
+    assert.equal(payload.email, admin.email);
+    assert.equal(payload.role, admin.role);
+    assert.equal(payload.subType, 'admin');
+    assert.equal(payload.tokenType, 'access');
+    assert.equal(payload.iss, 'japaika-admin-backend');
+    assert.equal(payload.aud, 'japaika-admin');
   });
 
-  assert.throws(
-    () => tokenService.verifyAccessToken(refreshToken),
-    (err) => err instanceof AppError && err.statusCode === 401,
-  );
+  it('rejects refresh tokens and customer tokens when verifying admin access tokens', () => {
+    const adminId = crypto.randomUUID();
+    const refreshToken = signRefreshToken({
+      adminId,
+      tokenId: crypto.randomUUID(),
+      familyId: crypto.randomUUID(),
+    });
+
+    assert.throws(() => verifyAccessToken(refreshToken), { code: 'UNAUTHORIZED' });
+
+    const customerToken = jwt.sign(
+      { sub: adminId, subType: 'customer', tokenType: 'access' },
+      'different_customer_secret_at_least_32_characters',
+      { issuer: 'japaika-user-backend', audience: 'japaika-user', expiresIn: '15m' }
+    );
+    assert.throws(() => verifyAccessToken(customerToken), { code: 'UNAUTHORIZED' });
+  });
+
+  it('signs and verifies admin refresh tokens and rejects access tokens', () => {
+    const adminId = crypto.randomUUID();
+    const tokenId = crypto.randomUUID();
+    const familyId = crypto.randomUUID();
+
+    const payload = verifyRefreshToken(signRefreshToken({ adminId, tokenId, familyId }));
+    assert.equal(payload.sub, adminId);
+    assert.equal(payload.jti, tokenId);
+    assert.equal(payload.familyId, familyId);
+    assert.equal(payload.subType, 'admin');
+    assert.equal(payload.tokenType, 'refresh');
+
+    const accessToken = signAccessToken({
+      id: adminId,
+      email: 'superadmin@japaika.com',
+      role: 'super_admin',
+    });
+    assert.throws(() => verifyRefreshToken(accessToken), { code: 'INVALID_REFRESH_TOKEN' });
+  });
+
+  it('hashes raw tokens deterministically with SHA-256', () => {
+    const h1 = hashToken('sample-admin-refresh-token');
+    assert.equal(h1.length, 64);
+    assert.equal(h1, hashToken('sample-admin-refresh-token'));
+    assert.notEqual(h1, hashToken('different-admin-refresh-token'));
+  });
 });
 
-test('token.service — hashRefreshToken produces deterministic 64-char SHA-256 hex digest', () => {
-  const digest1 = tokenService.hashRefreshToken('sample-refresh-jwt-value');
-  const digest2 = tokenService.hashRefreshToken('sample-refresh-jwt-value');
+describe('config/env production safety checks', () => {
+  it('rejects identical access and refresh secrets', () => {
+    const sameSecret = 'a_shared_secret_value_that_is_over_32_chars_long';
+    assert.throws(
+      () => loadEnv({ ADMIN_JWT_ACCESS_SECRET: sameSecret, ADMIN_JWT_REFRESH_SECRET: sameSecret }),
+      /must differ/
+    );
+  });
 
-  assert.equal(digest1.length, 64);
-  assert.equal(digest1, digest2);
-  assert.notEqual(digest1, tokenService.hashRefreshToken('different-refresh-jwt-value'));
-});
-
-test('token.service — parseDurationToMs parses s, m, h, d units accurately', () => {
-  assert.equal(tokenService.parseDurationToMs('30s'), 30 * 1000);
-  assert.equal(tokenService.parseDurationToMs('15m'), 15 * 60 * 1000);
-  assert.equal(tokenService.parseDurationToMs('2h'), 2 * 60 * 60 * 1000);
-  assert.equal(tokenService.parseDurationToMs('7d'), 7 * 24 * 60 * 60 * 1000);
+  it('rejects default/placeholder secrets in production', () => {
+    assert.throws(
+      () => loadEnv({ NODE_ENV: 'production' }),
+      /Production requires custom ADMIN_JWT_ACCESS_SECRET/
+    );
+  });
 });

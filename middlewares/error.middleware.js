@@ -1,9 +1,12 @@
 import env from '../config/env.js';
-import AppError from '../utils/appError.js';
-import { sendError } from '../utils/response.js';
+import { AppError, sendError } from '../utils/http.js';
 
-export function notFoundHandler(req, _res, next) {
-  next(new AppError(404, 'NOT_FOUND', `Route ${req.method} ${req.originalUrl} not found.`));
+export function notFoundHandler(req, res) {
+  return sendError(res, {
+    statusCode: 404,
+    code: 'NOT_FOUND',
+    message: `Route ${req.method} ${req.originalUrl} not found.`,
+  });
 }
 
 export function errorHandler(err, _req, res, _next) {
@@ -12,7 +15,7 @@ export function errorHandler(err, _req, res, _next) {
       statusCode: err.statusCode,
       code: err.code,
       message: err.message,
-      details: err.details,
+      details: err.details || [],
     });
   }
 
@@ -21,18 +24,29 @@ export function errorHandler(err, _req, res, _next) {
       statusCode: 400,
       code: 'INVALID_JSON',
       message: 'Malformed JSON request body.',
-      details: [],
+    });
+  }
+
+  if (err?.name === 'SequelizeValidationError' || err?.name === 'SequelizeUniqueConstraintError') {
+    const details = (err.errors || []).map((item) => ({
+      field: item.path || 'unknown',
+      message: item.message,
+    }));
+    return sendError(res, {
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Database validation error.',
+      details,
     });
   }
 
   if (!env.isTest) {
-    console.error('[AdminBackend Error]', err);
+    console.error('[ERROR]', err);
   }
 
   return sendError(res, {
     statusCode: 500,
     code: 'INTERNAL_SERVER_ERROR',
-    message: 'An unexpected internal server error occurred.',
-    details: [],
+    message: 'An unexpected error occurred. Please try again later.',
   });
 }
