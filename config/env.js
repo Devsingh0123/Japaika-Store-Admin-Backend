@@ -23,7 +23,7 @@ const envSchema = z
       .default('false')
       .transform((val) => val === 'true'),
 
-    TEST_DB_NAME: z.string().min(1).default('japaika_ecommerce_test'),
+    TEST_DB_NAME: z.string().optional().default(''),
 
     ADMIN_JWT_ACCESS_SECRET: z
       .string()
@@ -102,7 +102,7 @@ const env = {
   db: {
     host: raw.DB_HOST,
     port: raw.DB_PORT,
-    name: raw.NODE_ENV === 'test' ? raw.TEST_DB_NAME : raw.DB_NAME,
+    name: raw.NODE_ENV === 'test' && raw.TEST_DB_NAME ? raw.TEST_DB_NAME : raw.DB_NAME,
     user: raw.DB_USER,
     password: raw.DB_PASSWORD,
     logging: raw.DB_LOGGING,

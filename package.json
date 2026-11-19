@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/unit/*.test.js tests/integration/*.test.js",
-    "start": "nodemon server.js",
+    "dev": "nodemon server.js",
+    "start": "node server.js",
     "seed:super-admin": "node utils/seedSuperAdmin.js"
   },
   "keywords": [],

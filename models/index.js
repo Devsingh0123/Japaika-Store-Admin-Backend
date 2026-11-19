@@ -6,12 +6,12 @@ const Admin = defineAdminModel(sequelize);
 const AdminRefreshToken = defineAdminRefreshTokenModel(sequelize);
 
 Admin.hasMany(AdminRefreshToken, {
-  foreignKey: 'admin_id',
+  foreignKey: { name: 'adminId', field: 'admin_id' },
   as: 'refreshTokens',
 });
 
 AdminRefreshToken.belongsTo(Admin, {
-  foreignKey: 'admin_id',
+  foreignKey: { name: 'adminId', field: 'admin_id' },
   as: 'admin',
 });
 
