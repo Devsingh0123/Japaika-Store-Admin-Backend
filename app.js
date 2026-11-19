@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import env from './config/env.js';
 import { sequelize } from './models/index.js';
 import authRoutes from './routes/auth.routes.js';
+import categoryRoutes from './routes/category.routes.js';
 import { notFoundHandler, errorHandler } from './middlewares/error.middleware.js';
 import { sendSuccess, sendError } from './utils/http.js';
 
@@ -36,6 +37,7 @@ app.get('/api/v1/health', async (_req, res) => {
 });
 
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/categories', categoryRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

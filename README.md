@@ -1,6 +1,6 @@
 # Japaika Admin Backend (`admin-backend/`)
 
-Administrative and operations REST API for the standalone Japaika E-commerce platform, built with **Node.js (ES Modules)**, **Express 5**, **MySQL**, and **Sequelize ORM**.
+Administrative and operations REST API for the standalone Japaika E-commerce platform, built with **Node.js (ES Modules)**, **Express 5**, **MySQL**, **Sequelize ORM**, **Multer (memory storage)**, and **Cloudinary**.
 
 > **Migration Governance:** `user-backend/` is the designated owner of all shared MySQL migrations (`user-backend/migrations/`). `admin-backend/` consumes the shared schema without running separate migrations or `sequelize.sync({ force/alter })`.
 
@@ -14,7 +14,7 @@ Administrative and operations REST API for the standalone Japaika E-commerce pla
    ```
 
 2. **Configure environment variables**:
-   Create `.env` (using `.env.example` as a reference) with your local MySQL credentials (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) and admin JWT secrets (`ADMIN_JWT_ACCESS_SECRET`, `ADMIN_JWT_REFRESH_SECRET`).
+   Create `.env` (using `.env.example` as a reference) with your local MySQL credentials (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`), admin JWT secrets (`ADMIN_JWT_ACCESS_SECRET`, `ADMIN_JWT_REFRESH_SECRET`), and Cloudinary credentials (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`).
 
 3. **Ensure shared MySQL migrations are applied** (from `../user-backend/`):
    ```bash
@@ -37,7 +37,7 @@ Administrative and operations REST API for the standalone Japaika E-commerce pla
 
 ## Automated Tests
 
-Run all unit and integration tests (uses unique synthetic test emails against local MySQL with automatic per-test cleanup):
+Run all unit and integration tests:
 
 ```bash
 npm test
@@ -47,7 +47,7 @@ npm test
 
 ## Implemented Endpoints (`/api/v1`)
 
-| Method | Path | Auth | Description |
+| Method | Path | Auth / RBAC | Description |
 |---|---|---|---|
 | `GET` | `/api/v1/health` | Public | Service & MySQL connectivity check |
 | `POST` | `/api/v1/auth/login` | Public | Email + Password admin login; sets `HttpOnly` JWT cookies |
@@ -55,3 +55,8 @@ npm test
 | `POST` | `/api/v1/auth/logout` | Optional Cookie | Revoke current refresh token & clear auth cookies |
 | `POST` | `/api/v1/auth/logout-all` | Access Cookie | Revoke all active refresh tokens for the admin |
 | `GET` | `/api/v1/auth/me` | Access Cookie | Get currently authenticated admin profile & RBAC role |
+| `GET` | `/api/v1/categories` | All Active Admin Roles | List categories with pagination, search, filters, or `?tree=true` |
+| `GET` | `/api/v1/categories/:id` | All Active Admin Roles | Get single category with `parent` and `subcategories` |
+| `POST` | `/api/v1/categories` | `super_admin`, `catalog_manager` | Create category or subcategory (JSON or `multipart/form-data` with `image`) |
+| `PATCH` | `/api/v1/categories/:id` | `super_admin`, `catalog_manager` | Update category/subcategory or replace/remove Cloudinary image |
+| `DELETE` | `/api/v1/categories/:id` | `super_admin`, `catalog_manager` | Soft-delete category (if no active subcategories) & delete Cloudinary image |

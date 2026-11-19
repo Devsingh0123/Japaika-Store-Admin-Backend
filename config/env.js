@@ -69,6 +69,13 @@ export function loadEnv(raw = process.env) {
       accessName: 'japaika_admin_access',
       refreshName: 'japaika_admin_refresh',
     },
+    cloudinary: {
+      cloudName: (raw.CLOUDINARY_CLOUD_NAME || '').trim(),
+      apiKey: (raw.CLOUDINARY_API_KEY || '').trim(),
+      apiSecret: (raw.CLOUDINARY_API_SECRET || '').trim(),
+      allowedPrefix: 'japaika-ecom/',
+      categoriesFolder: 'japaika-ecom/categories',
+    },
     bootstrap: {
       superAdminEmail: (raw.INITIAL_SUPER_ADMIN_EMAIL || '').trim(),
       superAdminPassword: raw.INITIAL_SUPER_ADMIN_PASSWORD || '',
