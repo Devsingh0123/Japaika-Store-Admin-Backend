@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+.env*
+
+# Documentation & Agent files (keep only README.md)
+.agents/
+skills-lock.json
+docs/
+AGENTS.md
+TRD.md
+TASKS.md
+*.md
+!README.md
+
+# Logs & Test coverage
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
