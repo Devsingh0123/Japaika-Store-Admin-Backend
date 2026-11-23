@@ -1,24 +1,32 @@
-import env from './config/env.js';
 import { sequelize } from './models/index.js';
 import { ensureInitialSuperAdmin } from './services/auth.service.js';
+import { getJwtSecrets } from './services/token.service.js';
 import app from './app.js';
 
 let server;
 
 async function startServer() {
   try {
-    await sequelize.authenticate();
-    console.info(`MySQL connected (${env.db.host}:${env.db.port}/${env.db.name})`);
+    getJwtSecrets();
 
-    if (env.bootstrap.superAdminEmail && env.bootstrap.superAdminPassword) {
+    const dbHost = process.env.DB_HOST || '127.0.0.1';
+    const dbPort = Number(process.env.DB_PORT || 3306);
+    const dbName = process.env.DB_NAME || 'japaika_ecommerce';
+    const port = Number(process.env.PORT || 5001);
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    await sequelize.authenticate();
+    console.info(`MySQL connected (${dbHost}:${dbPort}/${dbName})`);
+
+    if (process.env.INITIAL_SUPER_ADMIN_EMAIL && process.env.INITIAL_SUPER_ADMIN_PASSWORD) {
       const result = await ensureInitialSuperAdmin();
       if (result.created) {
         console.info(`Initial Super Admin bootstrapped (${result.admin.email})`);
       }
     }
 
-    server = app.listen(env.port, () => {
-      console.info(`admin-backend listening on http://localhost:${env.port} (${env.nodeEnv})`);
+    server = app.listen(port, () => {
+      console.info(`admin-backend listening on http://localhost:${port} (${nodeEnv})`);
     });
   } catch (err) {
     console.error('Failed to start admin-backend:', err);

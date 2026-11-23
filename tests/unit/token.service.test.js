@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
-import { loadEnv } from '../../config/env.js';
 import {
+  getJwtSecrets,
   parseDurationToMs,
   hashToken,
   signAccessToken,
@@ -82,21 +82,21 @@ describe('token.service', () => {
     assert.equal(h1, hashToken('sample-admin-refresh-token'));
     assert.notEqual(h1, hashToken('different-admin-refresh-token'));
   });
-});
 
-describe('config/env production safety checks', () => {
-  it('rejects identical access and refresh secrets', () => {
+  it('enforces JWT secret security checks (min length, distinct secrets, production secret required)', () => {
     const sameSecret = 'a_shared_secret_value_that_is_over_32_chars_long';
     assert.throws(
-      () => loadEnv({ ADMIN_JWT_ACCESS_SECRET: sameSecret, ADMIN_JWT_REFRESH_SECRET: sameSecret }),
+      () =>
+        getJwtSecrets({
+          ADMIN_JWT_ACCESS_SECRET: sameSecret,
+          ADMIN_JWT_REFRESH_SECRET: sameSecret,
+        }),
       /must differ/
     );
-  });
 
-  it('rejects default/placeholder secrets in production', () => {
     assert.throws(
-      () => loadEnv({ NODE_ENV: 'production' }),
-      /Production requires custom ADMIN_JWT_ACCESS_SECRET/
+      () => getJwtSecrets({ NODE_ENV: 'production' }),
+      /must be at least 32 characters/
     );
   });
 });

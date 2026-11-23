@@ -1,11 +1,10 @@
-import env from '../config/env.js';
 import { Admin, ALL_ADMIN_ROLES, ADMIN_STATUSES } from '../models/index.js';
 import { sanitizeAdmin } from '../services/auth.service.js';
-import { verifyAccessToken } from '../services/token.service.js';
+import { ACCESS_COOKIE_NAME, verifyAccessToken } from '../services/token.service.js';
 import { AppError } from '../utils/http.js';
 
 export async function requireAdminAuth(req, _res, next) {
-  const accessToken = req.cookies?.[env.cookie.accessName];
+  const accessToken = req.cookies?.[ACCESS_COOKIE_NAME];
   if (!accessToken) {
     return next(new AppError(401, 'UNAUTHORIZED', 'Authentication required.'));
   }

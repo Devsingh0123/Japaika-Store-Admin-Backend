@@ -1,7 +1,6 @@
-import { describe, it, before, beforeEach, afterEach, after, mock } from 'node:test';
+import { describe, it, beforeEach, afterEach, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { Op } from 'sequelize';
 import request from 'supertest';
 import app from '../../app.js';
 import {
@@ -33,170 +32,6 @@ function extractCookies(setCookieHeaders = []) {
   return cookies;
 }
 
-/**
- * Fallback in-memory Category store used only if user-backend has not yet run the
- * `categories` migration on the local MySQL instance. Once the table exists in MySQL,
- * tests run directly against the real MySQL `categories` table.
- */
-function attachInMemoryCategoryStore() {
-  const rows = new Map();
-
-  function wrapInstance(record, extra = {}) {
-    return {
-      ...record,
-      ...extra,
-      get({ plain } = {}) {
-        return plain ? { ...record, ...extra } : this;
-      },
-      async update(patch) {
-        for (const other of rows.values()) {
-          if (other.id !== record.id && patch.slug && other.slug === patch.slug) {
-            const err = new Error('Duplicate slug');
-            err.name = 'SequelizeUniqueConstraintError';
-            throw err;
-          }
-        }
-        Object.assign(record, patch, { updatedAt: new Date() });
-        Object.assign(this, record);
-        return this;
-      },
-      async destroy() {
-        record.deletedAt = new Date();
-        this.deletedAt = record.deletedAt;
-      },
-    };
-  }
-
-  function matchesWhere(record, where = {}, paranoid = true) {
-    if (paranoid && record.deletedAt !== null) return false;
-
-    for (const [key, val] of Object.entries(where)) {
-      if (val === undefined) continue;
-      if (record[key] !== val) return false;
-    }
-
-    const orClauses = where[Op.or];
-    if (Array.isArray(orClauses) && orClauses.length > 0) {
-      const matchedOr = orClauses.some((clause) => {
-        const [field, cond] = Object.entries(clause)[0];
-        const likePattern = cond?.[Op.like] || '';
-        const needle = likePattern.replace(/^%|%$/g, '').toLowerCase();
-        return String(record[field] || '').toLowerCase().includes(needle);
-      });
-      if (!matchedOr) return false;
-    }
-
-    return true;
-  }
-
-  function sortRecords(list) {
-    return [...list].sort((a, b) => {
-      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-      return a.name.localeCompare(b.name);
-    });
-  }
-
-  function attachRelations(record, include = []) {
-    const extra = {};
-    for (const inc of include) {
-      if (inc.as === 'parent') {
-        const p = record.parentId ? rows.get(record.parentId) : null;
-        extra.parent = p && !p.deletedAt ? { ...p } : null;
-      }
-      if (inc.as === 'subcategories') {
-        const subs = [...rows.values()].filter(
-          (r) =>
-            !r.deletedAt &&
-            r.parentId === record.id &&
-            (inc.where?.isActive === undefined || r.isActive === inc.where.isActive)
-        );
-        extra.subcategories = sortRecords(subs);
-      }
-    }
-    return wrapInstance(record, extra);
-  }
-
-  mock.method(Category, 'findOne', async ({ where = {}, paranoid = true } = {}) => {
-    for (const r of rows.values()) {
-      if (matchesWhere(r, where, paranoid)) return wrapInstance(r);
-    }
-    return null;
-  });
-
-  mock.method(Category, 'findByPk', async (id, { include = [], paranoid = true } = {}) => {
-    const r = rows.get(id);
-    if (!r || (paranoid && r.deletedAt !== null)) return null;
-    return attachRelations(r, include);
-  });
-
-  mock.method(Category, 'count', async ({ where = {}, paranoid = true } = {}) => {
-    let count = 0;
-    for (const r of rows.values()) {
-      if (matchesWhere(r, where, paranoid)) count += 1;
-    }
-    return count;
-  });
-
-  mock.method(Category, 'findAll', async ({ where = {}, include = [], paranoid = true } = {}) => {
-    const matched = [...rows.values()].filter((r) => matchesWhere(r, where, paranoid));
-    return sortRecords(matched).map((r) => attachRelations(r, include));
-  });
-
-  mock.method(
-    Category,
-    'findAndCountAll',
-    async ({ where = {}, include = [], limit = 20, offset = 0, paranoid = true } = {}) => {
-      const matched = sortRecords(
-        [...rows.values()].filter((r) => matchesWhere(r, where, paranoid))
-      );
-      const paged = matched.slice(offset, offset + limit).map((r) => attachRelations(r, include));
-      return { count: matched.length, rows: paged };
-    }
-  );
-
-  mock.method(Category, 'create', async (data) => {
-    for (const other of rows.values()) {
-      if (other.slug === data.slug) {
-        const err = new Error('Duplicate slug');
-        err.name = 'SequelizeUniqueConstraintError';
-        throw err;
-      }
-    }
-    const now = new Date();
-    const record = {
-      id: data.id || crypto.randomUUID(),
-      parentId: data.parentId ?? null,
-      name: data.name,
-      slug: data.slug,
-      description: data.description ?? null,
-      imageUrl: data.imageUrl ?? null,
-      imagePublicId: data.imagePublicId ?? null,
-      isActive: data.isActive ?? true,
-      sortOrder: data.sortOrder ?? 0,
-      seoTitle: data.seoTitle ?? null,
-      seoDescription: data.seoDescription ?? null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    };
-    rows.set(record.id, record);
-    return wrapInstance(record);
-  });
-
-  mock.method(Category, 'destroy', async ({ where = {} } = {}) => {
-    let removed = 0;
-    for (const [id, r] of rows.entries()) {
-      if (matchesWhere(r, where, false)) {
-        rows.delete(id);
-        removed += 1;
-      }
-    }
-    return removed;
-  });
-
-  return rows;
-}
-
 describe('Category & Subcategory Management API integration tests (/api/v1/categories)', () => {
   const testAdminEmails = new Set();
   const createdCategoryIds = new Set();
@@ -205,15 +40,6 @@ describe('Category & Subcategory Management API integration tests (/api/v1/categ
   let uploadCounter = 0;
   let uploadMock;
   let deleteMock;
-  let inMemoryCategoryRows = null;
-
-  before(async () => {
-    try {
-      await sequelize.getQueryInterface().describeTable('categories');
-    } catch {
-      inMemoryCategoryRows = attachInMemoryCategoryStore();
-    }
-  });
 
   async function createAndLoginAdmin(role = ADMIN_ROLES.CATALOG_MANAGER) {
     const email = `test.cat.${role}.${crypto.randomUUID()}@japaika-admin-test.local`;
@@ -268,12 +94,8 @@ describe('Category & Subcategory Management API integration tests (/api/v1/categ
     deleteMock?.mock.restore();
     delete process.env.DISABLE_RATE_LIMIT;
 
-    if (inMemoryCategoryRows) {
-      inMemoryCategoryRows.clear();
-    } else {
-      for (const id of [...createdCategoryIds].reverse()) {
-        await Category.destroy({ where: { id }, force: true });
-      }
+    for (const id of [...createdCategoryIds].reverse()) {
+      await Category.destroy({ where: { id }, force: true });
     }
     createdCategoryIds.clear();
 

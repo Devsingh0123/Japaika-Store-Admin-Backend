@@ -1,4 +1,3 @@
-import env from '../config/env.js';
 import { AppError, sendError } from '../utils/http.js';
 
 export function notFoundHandler(req, res) {
@@ -40,7 +39,7 @@ export function errorHandler(err, _req, res, _next) {
     });
   }
 
-  if (!env.isTest) {
+  if (process.env.NODE_ENV !== 'test') {
     console.error('[ERROR]', err);
   }
 

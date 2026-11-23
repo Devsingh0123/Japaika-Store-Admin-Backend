@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import env from './config/env.js';
 import { sequelize } from './models/index.js';
 import authRoutes from './routes/auth.routes.js';
 import categoryRoutes from './routes/category.routes.js';
@@ -11,12 +10,18 @@ import { sendSuccess, sendError } from './utils/http.js';
 
 const app = express();
 
-if (env.trustProxy > 0) {
-  app.set('trust proxy', env.trustProxy);
+const trustProxy = Number(process.env.TRUST_PROXY || 0);
+if (trustProxy > 0) {
+  app.set('trust proxy', trustProxy);
 }
 
 app.use(helmet());
-app.use(cors({ origin: env.adminFrontendUrl, credentials: true }));
+app.use(
+  cors({
+    origin: process.env.ADMIN_FRONTEND_URL || 'http://localhost:3001',
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 

@@ -1,6 +1,9 @@
-import env from '../config/env.js';
 import * as authService from '../services/auth.service.js';
-import { setAuthCookies, clearAuthCookies } from '../services/token.service.js';
+import {
+  REFRESH_COOKIE_NAME,
+  setAuthCookies,
+  clearAuthCookies,
+} from '../services/token.service.js';
 import { sendSuccess } from '../utils/http.js';
 
 export async function login(req, res) {
@@ -20,7 +23,7 @@ export async function login(req, res) {
 }
 
 export async function refresh(req, res) {
-  const rawRefreshToken = req.cookies?.[env.cookie.refreshName];
+  const rawRefreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
 
   try {
     const { admin, accessToken, refreshToken } = await authService.refreshSession({
@@ -45,7 +48,7 @@ export async function refresh(req, res) {
 
 export async function logout(req, res) {
   try {
-    await authService.logout({ refreshToken: req.cookies?.[env.cookie.refreshName] });
+    await authService.logout({ refreshToken: req.cookies?.[REFRESH_COOKIE_NAME] });
   } finally {
     clearAuthCookies(res);
   }

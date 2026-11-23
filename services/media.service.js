@@ -1,5 +1,4 @@
 import { v2 as cloudinary } from 'cloudinary';
-import env from '../config/env.js';
 import { AppError } from '../utils/http.js';
 
 export const ALLOWED_CLOUDINARY_PREFIX = 'japaika-ecom/';
@@ -8,13 +7,23 @@ export const CLOUDINARY_FOLDERS = Object.freeze({
   CATEGORIES: 'japaika-ecom/categories',
 });
 
-if (env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret) {
+function hasCloudinaryCredentials() {
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
+  const apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    return false;
+  }
+
   cloudinary.config({
-    cloud_name: env.cloudinary.cloudName,
-    api_key: env.cloudinary.apiKey,
-    api_secret: env.cloudinary.apiSecret,
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
     secure: true,
   });
+
+  return true;
 }
 
 export function isSafeJapaikaEcomPublicId(publicId) {
@@ -37,7 +46,7 @@ export async function uploadImageBuffer(
     );
   }
 
-  if (!env.cloudinary.cloudName || !env.cloudinary.apiKey || !env.cloudinary.apiSecret) {
+  if (!hasCloudinaryCredentials()) {
     throw new AppError(
       503,
       'MEDIA_STORAGE_NOT_CONFIGURED',
@@ -85,7 +94,7 @@ export async function deleteImageByPublicId(publicId) {
     return { deleted: false, reason: 'PROTECTED_EXTERNAL_ASSET' };
   }
 
-  if (!env.cloudinary.cloudName || !env.cloudinary.apiKey || !env.cloudinary.apiSecret) {
+  if (!hasCloudinaryCredentials()) {
     return { deleted: false, reason: 'MEDIA_STORAGE_NOT_CONFIGURED' };
   }
 
@@ -96,7 +105,7 @@ export async function deleteImageByPublicId(publicId) {
     });
     return { deleted: result?.result === 'ok', reason: result?.result || 'UNKNOWN' };
   } catch (err) {
-    if (!env.isTest) {
+    if (process.env.NODE_ENV !== 'test') {
       console.error(`[MediaService] Failed to delete Cloudinary asset (${normalizedId}):`, err.message);
     }
     return { deleted: false, reason: 'CLEANUP_ERROR' };

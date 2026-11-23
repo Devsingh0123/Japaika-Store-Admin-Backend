@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import env from '../config/env.js';
 import {
   sequelize,
   Admin,
@@ -45,7 +44,10 @@ export function validatePasswordStrength(password) {
   return true;
 }
 
-export async function hashPassword(plainPassword, saltRounds = env.bcrypt.saltRounds) {
+export async function hashPassword(
+  plainPassword,
+  saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS || 12)
+) {
   validatePasswordStrength(plainPassword);
   return bcrypt.hash(plainPassword, saltRounds);
 }
@@ -247,9 +249,9 @@ export async function getCurrentAdmin({ adminId }) {
 }
 
 export async function ensureInitialSuperAdmin({
-  email = env.bootstrap.superAdminEmail,
-  password = env.bootstrap.superAdminPassword,
-  fullName = env.bootstrap.superAdminName,
+  email = (process.env.INITIAL_SUPER_ADMIN_EMAIL || '').trim(),
+  password = process.env.INITIAL_SUPER_ADMIN_PASSWORD || '',
+  fullName = (process.env.INITIAL_SUPER_ADMIN_NAME || 'Japaika Super Admin').trim(),
 } = {}) {
   const parsed = bootstrapInputSchema.safeParse({ email, password, fullName });
   if (!parsed.success) {

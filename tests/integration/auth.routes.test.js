@@ -4,7 +4,11 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import app from '../../app.js';
-import env from '../../config/env.js';
+import {
+  JWT_ISSUER,
+  JWT_AUDIENCE,
+  getJwtSecrets,
+} from '../../services/token.service.js';
 import {
   sequelize,
   Admin,
@@ -206,8 +210,8 @@ describe('Admin Auth & RBAC API integration tests (/api/v1)', () => {
 
       const forgedCustomerJwt = jwt.sign(
         { sub: admin.id, email, subType: 'customer', tokenType: 'access' },
-        env.jwt.accessSecret,
-        { issuer: env.jwt.issuer, audience: env.jwt.audience, expiresIn: '15m' }
+        getJwtSecrets().accessSecret,
+        { issuer: JWT_ISSUER, audience: JWT_AUDIENCE, expiresIn: '15m' }
       );
       const forgedRes = await request(app)
         .get('/api/v1/auth/me')

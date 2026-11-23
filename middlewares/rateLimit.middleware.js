@@ -1,5 +1,4 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import env from '../config/env.js';
 import { normalizeEmail } from '../services/auth.service.js';
 import { sendError } from '../utils/http.js';
 
@@ -9,7 +8,8 @@ function makeLimiter({ limit, message, keyGenerator }) {
     limit,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    skip: () => !env.isProd && process.env.DISABLE_RATE_LIMIT === 'true',
+    skip: () =>
+      process.env.NODE_ENV !== 'production' && process.env.DISABLE_RATE_LIMIT === 'true',
     ...(keyGenerator ? { keyGenerator } : {}),
     handler: (_req, res) =>
       sendError(res, {
