@@ -1,5 +1,4 @@
 import { sequelize } from './models/index.js';
-import { ensureInitialSuperAdmin } from './services/auth.service.js';
 import { getJwtSecrets } from './services/token.service.js';
 import app from './app.js';
 
@@ -17,13 +16,6 @@ async function startServer() {
 
     await sequelize.authenticate();
     console.info(`MySQL connected (${dbHost}:${dbPort}/${dbName})`);
-
-    if (process.env.INITIAL_SUPER_ADMIN_EMAIL && process.env.INITIAL_SUPER_ADMIN_PASSWORD) {
-      const result = await ensureInitialSuperAdmin();
-      if (result.created) {
-        console.info(`Initial Super Admin bootstrapped (${result.admin.email})`);
-      }
-    }
 
     server = app.listen(port, () => {
       console.info(`admin-backend listening on http://localhost:${port} (${nodeEnv})`);

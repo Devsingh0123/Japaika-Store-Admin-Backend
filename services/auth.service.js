@@ -17,14 +17,16 @@ import {
 } from './token.service.js';
 import { AppError } from '../utils/http.js';
 
+export const BCRYPT_SALT_ROUNDS = 12;
+
 // Precomputed dummy hash used when an admin email does not exist to prevent timing-based user enumeration.
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('japaika_dummy_password_timing_guard_9x7Q!', 10);
 const PASSWORD_COMPLEXITY_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/;
 
 const bootstrapInputSchema = z.object({
-  email: z.string().trim().email('Valid initial super-admin email is required'),
-  password: z.string().min(8, 'Initial super-admin password must be at least 8 characters'),
-  fullName: z.string().trim().min(2).max(120).default('Japaika Super Admin'),
+  email: z.string().trim().email('Valid super-admin email is required'),
+  password: z.string().min(8, 'Super-admin password must be at least 8 characters'),
+  fullName: z.string().trim().min(2, 'Super-admin name must be at least 2 characters').max(120),
 });
 
 // --- Email & Password Helpers ---
@@ -44,10 +46,7 @@ export function validatePasswordStrength(password) {
   return true;
 }
 
-export async function hashPassword(
-  plainPassword,
-  saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS || 12)
-) {
+export async function hashPassword(plainPassword, saltRounds = BCRYPT_SALT_ROUNDS) {
   validatePasswordStrength(plainPassword);
   return bcrypt.hash(plainPassword, saltRounds);
 }
@@ -248,11 +247,7 @@ export async function getCurrentAdmin({ adminId }) {
   return sanitizeAdmin(admin);
 }
 
-export async function ensureInitialSuperAdmin({
-  email = (process.env.INITIAL_SUPER_ADMIN_EMAIL || '').trim(),
-  password = process.env.INITIAL_SUPER_ADMIN_PASSWORD || '',
-  fullName = (process.env.INITIAL_SUPER_ADMIN_NAME || 'Japaika Super Admin').trim(),
-} = {}) {
+export async function ensureInitialSuperAdmin({ email, password, fullName } = {}) {
   const parsed = bootstrapInputSchema.safeParse({ email, password, fullName });
   if (!parsed.success) {
     const details = parsed.error.issues.map((issue) => ({

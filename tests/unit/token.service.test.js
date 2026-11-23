@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import {
+  ACCESS_MAX_AGE_MS,
+  REFRESH_MAX_AGE_MS,
   getJwtSecrets,
-  parseDurationToMs,
+  getRefreshMaxAgeMs,
   hashToken,
   signAccessToken,
   signRefreshToken,
@@ -13,12 +15,10 @@ import {
 } from '../../services/token.service.js';
 
 describe('token.service', () => {
-  it('parses duration strings into milliseconds', () => {
-    assert.equal(parseDurationToMs('15m', 0), 15 * 60 * 1000);
-    assert.equal(parseDurationToMs('7d', 0), 7 * 24 * 60 * 60 * 1000);
-    assert.equal(parseDurationToMs('60s', 0), 60 * 1000);
-    assert.equal(parseDurationToMs('2h', 0), 2 * 60 * 60 * 1000);
-    assert.equal(parseDurationToMs('invalid', 1234), 1234);
+  it('uses fixed access (15m) and refresh (7d) token durations', () => {
+    assert.equal(ACCESS_MAX_AGE_MS, 15 * 60 * 1000);
+    assert.equal(REFRESH_MAX_AGE_MS, 7 * 24 * 60 * 60 * 1000);
+    assert.equal(getRefreshMaxAgeMs(), 7 * 24 * 60 * 60 * 1000);
   });
 
   it('signs and verifies admin access tokens with strict claims', () => {

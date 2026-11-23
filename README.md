@@ -21,8 +21,7 @@ Administrative and operations REST API for the standalone Japaika E-commerce pla
    npm run migrate
    ```
 
-4. **Seed the initial Super Admin account** *(idempotent; no public registration endpoint exists)*:
-   Set `INITIAL_SUPER_ADMIN_EMAIL`, `INITIAL_SUPER_ADMIN_PASSWORD`, and `INITIAL_SUPER_ADMIN_NAME` in `.env`, then run:
+4. **Seed the initial Super Admin account** *(idempotent; prompts interactively for name, email, and password)*:
    ```bash
    npm run seed:super-admin
    ```

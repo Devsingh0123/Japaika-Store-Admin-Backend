@@ -10,9 +10,8 @@ import { sendSuccess, sendError } from './utils/http.js';
 
 const app = express();
 
-const trustProxy = Number(process.env.TRUST_PROXY || 0);
-if (trustProxy > 0) {
-  app.set('trust proxy', trustProxy);
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
 }
 
 app.use(helmet());

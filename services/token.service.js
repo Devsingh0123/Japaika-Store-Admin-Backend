@@ -7,9 +7,13 @@ export const REFRESH_COOKIE_NAME = 'japaika_admin_refresh';
 export const JWT_ISSUER = 'japaika-admin-backend';
 export const JWT_AUDIENCE = 'japaika-admin';
 
+export const ACCESS_TOKEN_EXPIRES_IN = '15m';
+export const REFRESH_TOKEN_EXPIRES_IN = '7d';
+export const ACCESS_MAX_AGE_MS = 15 * 60 * 1000;
+export const REFRESH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 const DEV_ACCESS_SECRET = 'dev_only_admin_jwt_access_secret_replace_in_prod_32';
 const DEV_REFRESH_SECRET = 'dev_only_admin_jwt_refresh_secret_replace_in_prod_32';
-const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
 export function getJwtSecrets(raw = process.env) {
   const isProd = raw.NODE_ENV === 'production';
@@ -37,13 +41,8 @@ export function getJwtSecrets(raw = process.env) {
   return { accessSecret, refreshSecret };
 }
 
-export function parseDurationToMs(duration, fallbackMs) {
-  const match = String(duration || '').trim().match(/^(\d+)([smhd])$/i);
-  return match ? Number(match[1]) * UNIT_MS[match[2].toLowerCase()] : fallbackMs;
-}
-
 export function getRefreshMaxAgeMs() {
-  return parseDurationToMs(process.env.ADMIN_JWT_REFRESH_EXPIRES_IN || '7d', 7 * UNIT_MS.d);
+  return REFRESH_MAX_AGE_MS;
 }
 
 export function hashToken(rawToken) {
@@ -65,7 +64,7 @@ export function signAccessToken(admin) {
       algorithm: 'HS256',
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
-      expiresIn: process.env.ADMIN_JWT_ACCESS_EXPIRES_IN || '15m',
+      expiresIn: ACCESS_TOKEN_EXPIRES_IN,
     }
   );
 }
@@ -85,7 +84,7 @@ export function signRefreshToken({ adminId, tokenId, familyId }) {
       algorithm: 'HS256',
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
-      expiresIn: process.env.ADMIN_JWT_REFRESH_EXPIRES_IN || '7d',
+      expiresIn: REFRESH_TOKEN_EXPIRES_IN,
     }
   );
 }
@@ -139,12 +138,10 @@ export function verifyRefreshToken(token) {
 }
 
 function cookieBaseOptions() {
-  const domain = (process.env.COOKIE_DOMAIN || '').trim();
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    ...(domain ? { domain } : {}),
   };
 }
 
@@ -153,12 +150,12 @@ export function setAuthCookies(res, { accessToken, refreshToken }) {
   res.cookie(ACCESS_COOKIE_NAME, accessToken, {
     ...base,
     path: '/',
-    maxAge: parseDurationToMs(process.env.ADMIN_JWT_ACCESS_EXPIRES_IN || '15m', 15 * UNIT_MS.m),
+    maxAge: ACCESS_MAX_AGE_MS,
   });
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
     ...base,
     path: '/api/v1/auth',
-    maxAge: getRefreshMaxAgeMs(),
+    maxAge: REFRESH_MAX_AGE_MS,
   });
 }
 

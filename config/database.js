@@ -12,7 +12,7 @@ const sequelize = new Sequelize(
     port: Number(process.env.DB_PORT || 3306),
     dialect: 'mysql',
     timezone: '+00:00',
-    logging: process.env.DB_LOGGING === 'true' ? console.log : false,
+    logging: false,
     pool: {
       max: 10,
       min: 0,
