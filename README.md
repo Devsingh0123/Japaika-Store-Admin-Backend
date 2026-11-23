@@ -58,4 +58,16 @@ npm test
 | `GET` | `/api/v1/categories/:id` | All Active Admin Roles | Get single category with `parent` and `subcategories` |
 | `POST` | `/api/v1/categories` | `super_admin`, `catalog_manager` | Create category or subcategory (JSON or `multipart/form-data` with `image`) |
 | `PATCH` | `/api/v1/categories/:id` | `super_admin`, `catalog_manager` | Update category/subcategory or replace/remove Cloudinary image |
-| `DELETE` | `/api/v1/categories/:id` | `super_admin`, `catalog_manager` | Soft-delete category (if no active subcategories) & delete Cloudinary image |
+| `DELETE` | `/api/v1/categories/:id` | `super_admin`, `catalog_manager` | Soft-delete category (if no subcategories/products) & delete Cloudinary image |
+| `GET` | `/api/v1/products` | All Active Admin Roles | Paginated product list with search, status, category, type, featured & stock filters |
+| `GET` | `/api/v1/products/:id` | All Active Admin Roles | Full product detail with category, variants, images, certificate & shipping |
+| `POST` | `/api/v1/products` | `super_admin`, `catalog_manager` | Single-page product creation (Save Draft or Publish; JSON or `multipart/form-data`) |
+| `PATCH` | `/api/v1/products/:id` | `super_admin`, `catalog_manager` | Update product metadata, specifications, variant options & variants |
+| `PATCH` | `/api/v1/products/:id/status` | `super_admin`, `catalog_manager` | Transition product status (`draft`, `active`, `archived`) with publish validation |
+| `PATCH` | `/api/v1/products/:id/variants/:variantId/stock` | `super_admin`, `catalog_manager`, `operations_manager` | Update variant stock quantity, low-stock threshold, or active toggle |
+| `DELETE` | `/api/v1/products/:id` | `super_admin`, `catalog_manager` | Soft-delete product & variants and clean up Cloudinary images & certificate |
+| `POST` | `/api/v1/products/:id/images` | `super_admin`, `catalog_manager` | Upload product gallery images (`japaika-ecom/products`, max 10 per product) |
+| `PATCH` | `/api/v1/products/:id/images/:imageId` | `super_admin`, `catalog_manager` | Update image `altText`, `sortOrder`, or set `isPrimary: true` |
+| `DELETE` | `/api/v1/products/:id/images/:imageId` | `super_admin`, `catalog_manager` | Delete product image & auto-promote primary image |
+| `PUT` | `/api/v1/products/:id/certificate` | `super_admin`, `catalog_manager` | Upload or replace product certificate (image or PDF in `japaika-ecom/certificates`) |
+| `DELETE` | `/api/v1/products/:id/certificate` | `super_admin`, `catalog_manager` | Remove product certificate & delete Cloudinary asset |

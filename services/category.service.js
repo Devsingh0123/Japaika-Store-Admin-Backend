@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { Op } from 'sequelize';
-import { sequelize, Category } from '../models/index.js';
+import { sequelize, Category, Product } from '../models/index.js';
 import mediaService, { CLOUDINARY_FOLDERS } from './media.service.js';
 import { AppError } from '../utils/http.js';
 
@@ -409,6 +409,18 @@ export async function deleteCategory(id) {
       409,
       'CATEGORY_HAS_SUBCATEGORIES',
       'Cannot delete a category that still has subcategories. Delete or reassign its subcategories first.'
+    );
+  }
+
+  const productCount = await Product.count({
+    where: { categoryId: id },
+  });
+
+  if (productCount > 0) {
+    throw new AppError(
+      409,
+      'CATEGORY_HAS_PRODUCTS',
+      'Cannot delete a category that still has products assigned to it. Reassign or delete its products first.'
     );
   }
 

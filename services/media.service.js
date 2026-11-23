@@ -5,6 +5,8 @@ export const ALLOWED_CLOUDINARY_PREFIX = 'japaika-ecom/';
 
 export const CLOUDINARY_FOLDERS = Object.freeze({
   CATEGORIES: 'japaika-ecom/categories',
+  PRODUCTS: 'japaika-ecom/products',
+  CERTIFICATES: 'japaika-ecom/certificates',
 });
 
 function hasCloudinaryCredentials() {
@@ -82,7 +84,62 @@ export async function uploadImageBuffer(
   });
 }
 
-export async function deleteImageByPublicId(publicId) {
+export async function uploadCertificateBuffer(
+  buffer,
+  { mimetype = 'image/png', folder = CLOUDINARY_FOLDERS.CERTIFICATES } = {}
+) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new AppError(400, 'INVALID_CERTIFICATE_FILE', 'Certificate file buffer is empty or invalid.');
+  }
+
+  if (typeof folder !== 'string' || !folder.startsWith(ALLOWED_CLOUDINARY_PREFIX)) {
+    throw new AppError(
+      500,
+      'INVALID_UPLOAD_FOLDER',
+      `Cloudinary folder must start with "${ALLOWED_CLOUDINARY_PREFIX}".`
+    );
+  }
+
+  if (!hasCloudinaryCredentials()) {
+    throw new AppError(
+      503,
+      'MEDIA_STORAGE_NOT_CONFIGURED',
+      'Cloudinary media storage credentials are not configured.'
+    );
+  }
+
+  const resourceType = mimetype === 'application/pdf' ? 'raw' : 'image';
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: resourceType,
+      },
+      (err, result) => {
+        if (err || !result?.secure_url || !result?.public_id) {
+          return reject(
+            new AppError(
+              502,
+              'CERTIFICATE_UPLOAD_FAILED',
+              'Failed to upload certificate to media storage. Please try again.'
+            )
+          );
+        }
+
+        return resolve({
+          certificateUrl: result.secure_url,
+          certificatePublicId: result.public_id,
+          certificateResourceType: resourceType,
+        });
+      }
+    );
+
+    uploadStream.end(buffer);
+  });
+}
+
+export async function deleteAssetByPublicId(publicId, { resourceType = 'image' } = {}) {
   if (!publicId || typeof publicId !== 'string' || !publicId.trim()) {
     return { deleted: false, reason: 'EMPTY_PUBLIC_ID' };
   }
@@ -100,7 +157,7 @@ export async function deleteImageByPublicId(publicId) {
 
   try {
     const result = await cloudinary.uploader.destroy(normalizedId, {
-      resource_type: 'image',
+      resource_type: resourceType === 'raw' ? 'raw' : 'image',
       invalidate: true,
     });
     return { deleted: result?.result === 'ok', reason: result?.result || 'UNKNOWN' };
@@ -112,11 +169,17 @@ export async function deleteImageByPublicId(publicId) {
   }
 }
 
+export async function deleteImageByPublicId(publicId) {
+  return deleteAssetByPublicId(publicId, { resourceType: 'image' });
+}
+
 const mediaService = {
   ALLOWED_CLOUDINARY_PREFIX,
   CLOUDINARY_FOLDERS,
   isSafeJapaikaEcomPublicId,
   uploadImageBuffer,
+  uploadCertificateBuffer,
+  deleteAssetByPublicId,
   deleteImageByPublicId,
 };
 
