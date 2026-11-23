@@ -10,7 +10,7 @@ import {
   Category,
   Product,
   ProductVariant,
-  ProductImage,
+  ProductMedia,
   ADMIN_ROLES,
   ADMIN_STATUSES,
 } from '../../models/index.js';
@@ -20,6 +20,11 @@ import mediaService from '../../services/media.service.js';
 const VALID_PNG_BUFFER = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
   0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
+
+const VALID_MP4_BUFFER = Buffer.from([
+  0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70,
+  0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x02, 0x00,
 ]);
 
 const VALID_PDF_BUFFER = Buffer.from('%PDF-1.7\n%Japaika IGI Certificate Test\n%%EOF', 'ascii');
@@ -45,7 +50,7 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
   let uploadedAssets = [];
   let deletedAssets = [];
   let assetCounter = 0;
-  let uploadImageMock;
+  let uploadProductMediaMock;
   let uploadCertMock;
   let deleteImageMock;
   let deleteAssetMock;
@@ -87,16 +92,25 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     deletedAssets = [];
     assetCounter = 0;
 
-    uploadImageMock = mock.method(
+    uploadProductMediaMock = mock.method(
       mediaService,
-      'uploadImageBuffer',
-      async (_buffer, { folder } = {}) => {
+      'uploadProductMediaBuffer',
+      async (_buffer, { mimetype, folder } = {}) => {
         assetCounter += 1;
-        const imagePublicId = `${folder}/prod_img_${assetCounter}_${crypto.randomUUID().slice(0, 8)}`;
-        uploadedAssets.push(imagePublicId);
+        const isVideo = typeof mimetype === 'string' && mimetype.startsWith('video/');
+        const mediaType = isVideo ? 'video' : 'image';
+        const ext = isVideo ? 'mp4' : 'png';
+        const mediaPublicId = `${folder}/prod_media_${assetCounter}_${crypto.randomUUID().slice(0, 8)}`;
+        uploadedAssets.push({ publicId: mediaPublicId, resourceType: mediaType });
         return {
-          imageUrl: `https://res.cloudinary.com/demo/image/upload/${imagePublicId}.png`,
-          imagePublicId,
+          mediaType,
+          mediaUrl: `https://res.cloudinary.com/demo/${mediaType}/upload/${mediaPublicId}.${ext}`,
+          mediaPublicId,
+          thumbnailUrl: isVideo
+            ? `https://res.cloudinary.com/demo/video/upload/${mediaPublicId}.jpg`
+            : null,
+          mimeType: mimetype || 'image/png',
+          durationSeconds: isVideo ? 8.5 : null,
         };
       }
     );
@@ -109,7 +123,7 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
         const resourceType = mimetype === 'application/pdf' ? 'raw' : 'image';
         const ext = resourceType === 'raw' ? 'pdf' : 'png';
         const certificatePublicId = `${folder}/cert_${assetCounter}_${crypto.randomUUID().slice(0, 8)}`;
-        uploadedAssets.push(certificatePublicId);
+        uploadedAssets.push({ publicId: certificatePublicId, resourceType });
         return {
           certificateUrl: `https://res.cloudinary.com/demo/${resourceType}/upload/${certificatePublicId}.${ext}`,
           certificatePublicId,
@@ -122,28 +136,32 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
       if (!publicId || !String(publicId).startsWith('japaika-ecom/')) {
         return { deleted: false, reason: 'PROTECTED_EXTERNAL_ASSET' };
       }
-      deletedAssets.push(publicId);
+      deletedAssets.push({ publicId, resourceType: 'image' });
       return { deleted: true, reason: 'ok' };
     });
 
-    deleteAssetMock = mock.method(mediaService, 'deleteAssetByPublicId', async (publicId) => {
-      if (!publicId || !String(publicId).startsWith('japaika-ecom/')) {
-        return { deleted: false, reason: 'PROTECTED_EXTERNAL_ASSET' };
+    deleteAssetMock = mock.method(
+      mediaService,
+      'deleteAssetByPublicId',
+      async (publicId, { resourceType = 'image' } = {}) => {
+        if (!publicId || !String(publicId).startsWith('japaika-ecom/')) {
+          return { deleted: false, reason: 'PROTECTED_EXTERNAL_ASSET' };
+        }
+        deletedAssets.push({ publicId, resourceType });
+        return { deleted: true, reason: 'ok' };
       }
-      deletedAssets.push(publicId);
-      return { deleted: true, reason: 'ok' };
-    });
+    );
   });
 
   afterEach(async () => {
-    uploadImageMock?.mock.restore();
+    uploadProductMediaMock?.mock.restore();
     uploadCertMock?.mock.restore();
     deleteImageMock?.mock.restore();
     deleteAssetMock?.mock.restore();
     delete process.env.DISABLE_RATE_LIMIT;
 
     for (const productId of [...createdProductIds]) {
-      await ProductImage.destroy({ where: { productId } });
+      await ProductMedia.destroy({ where: { productId } });
       await ProductVariant.destroy({ where: { productId }, force: true });
       await Product.destroy({ where: { id: productId }, force: true });
     }
@@ -168,12 +186,12 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     await sequelize.close();
   });
 
-  it('supports simple product draft creation, publish validation, gallery & PDF certificate management, and category delete protection', async () => {
+  it('supports simple product draft creation, publish validation, unified gallery media (images + short video) & PDF certificate management, and category delete protection', async () => {
     const cookie = await createAndLoginAdmin(ADMIN_ROLES.CATALOG_MANAGER);
     const suffix = crypto.randomUUID().slice(0, 8);
     const category = await createTestCategory(suffix);
 
-    // 1. Create a simple product in draft mode without category or images
+    // 1. Create a simple product in draft mode without category or media
     const draftRes = await request(app)
       .post('/api/v1/products')
       .set('Cookie', cookie)
@@ -215,21 +233,37 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     assert.equal(prematurePublish.status, 400);
     assert.equal(prematurePublish.body.error.code, 'PUBLISH_VALIDATION_FAILED');
 
-    // 3. Assign category via PATCH, upload 2 gallery images, and attach PDF certificate
+    // 3. Assign category via PATCH, upload 2 gallery images + 1 short MP4 video, and attach PDF certificate
     const assignCatRes = await request(app)
       .patch(`/api/v1/products/${draftProduct.id}`)
       .set('Cookie', cookie)
       .send({ categoryId: category.id });
     assert.equal(assignCatRes.status, 200);
 
-    const imgUploadRes = await request(app)
-      .post(`/api/v1/products/${draftProduct.id}/images`)
+    const mediaUploadRes = await request(app)
+      .post(`/api/v1/products/${draftProduct.id}/media`)
       .set('Cookie', cookie)
-      .attach('images', VALID_PNG_BUFFER, { filename: 'pearl-1.png', contentType: 'image/png' })
-      .attach('images', VALID_PNG_BUFFER, { filename: 'pearl-2.png', contentType: 'image/png' });
-    assert.equal(imgUploadRes.status, 201);
-    assert.equal(imgUploadRes.body.data.images.length, 2);
-    assert.equal(imgUploadRes.body.data.images[0].isPrimary, true);
+      .attach('media', VALID_PNG_BUFFER, { filename: 'pearl-1.png', contentType: 'image/png' })
+      .attach('media', VALID_PNG_BUFFER, { filename: 'pearl-2.png', contentType: 'image/png' })
+      .attach('media', VALID_MP4_BUFFER, { filename: 'pearl-360.mp4', contentType: 'video/mp4' });
+    assert.equal(mediaUploadRes.status, 201);
+    assert.equal(mediaUploadRes.body.data.media.length, 3);
+    assert.equal(mediaUploadRes.body.data.media[0].isPrimary, true);
+    assert.equal(mediaUploadRes.body.data.media[0].mediaType, 'image');
+
+    const videoItem = mediaUploadRes.body.data.media.find((m) => m.mediaType === 'video');
+    assert.ok(videoItem);
+    assert.equal(videoItem.isPrimary, false);
+    assert.ok(videoItem.thumbnailUrl);
+    assert.equal(videoItem.durationSeconds, 8.5);
+
+    // 4. Setting a video as primary image is rejected with 400 VALIDATION_ERROR
+    const setVideoPrimaryRes = await request(app)
+      .patch(`/api/v1/products/${draftProduct.id}/media/${videoItem.id}`)
+      .set('Cookie', cookie)
+      .send({ isPrimary: true });
+    assert.equal(setVideoPrimaryRes.status, 400);
+    assert.equal(setVideoPrimaryRes.body.error.code, 'VALIDATION_ERROR');
 
     const certUploadRes = await request(app)
       .put(`/api/v1/products/${draftProduct.id}/certificate`)
@@ -243,7 +277,7 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     assert.equal(certUploadRes.body.data.certificate.resourceType, 'raw');
     assert.equal(certUploadRes.body.data.certificate.label, 'GIA Lab Report');
 
-    // 4. Publish product -> 200 OK and sets publishedAt
+    // 5. Publish product -> 200 OK and sets publishedAt
     const publishRes = await request(app)
       .patch(`/api/v1/products/${draftProduct.id}/status`)
       .set('Cookie', cookie)
@@ -252,37 +286,49 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     assert.equal(publishRes.body.data.product.status, 'active');
     assert.ok(publishRes.body.data.product.publishedAt);
 
-    // 5. Category delete protection: cannot delete category while product is assigned (409 CATEGORY_HAS_PRODUCTS)
+    // 6. Category delete protection: cannot delete category while product is assigned (409 CATEGORY_HAS_PRODUCTS)
     const blockedCatDelete = await request(app)
       .delete(`/api/v1/categories/${category.id}`)
       .set('Cookie', cookie);
     assert.equal(blockedCatDelete.status, 409);
     assert.equal(blockedCatDelete.body.error.code, 'CATEGORY_HAS_PRODUCTS');
 
-    // 6. Delete first (primary) image -> second image auto-promoted to primary; trying to delete last remaining image on active product fails with 400 CANNOT_REMOVE_LAST_IMAGE
-    const firstImgId = imgUploadRes.body.data.images[0].id;
-    const secondImgId = imgUploadRes.body.data.images[1].id;
+    // 7. Delete first (primary) image -> second image auto-promoted to primary; trying to delete last remaining image on active product fails with 400 CANNOT_REMOVE_LAST_IMAGE
+    const imageItems = mediaUploadRes.body.data.media.filter((m) => m.mediaType === 'image');
+    const firstImgId = imageItems[0].id;
+    const secondImgId = imageItems[1].id;
 
     const delFirstImg = await request(app)
-      .delete(`/api/v1/products/${draftProduct.id}/images/${firstImgId}`)
+      .delete(`/api/v1/products/${draftProduct.id}/media/${firstImgId}`)
       .set('Cookie', cookie);
     assert.equal(delFirstImg.status, 200);
 
     const blockLastImg = await request(app)
-      .delete(`/api/v1/products/${draftProduct.id}/images/${secondImgId}`)
+      .delete(`/api/v1/products/${draftProduct.id}/media/${secondImgId}`)
       .set('Cookie', cookie);
     assert.equal(blockLastImg.status, 400);
     assert.equal(blockLastImg.body.error.code, 'CANNOT_REMOVE_LAST_IMAGE');
 
-    // 7. Delete product -> soft-deletes product/variants and cleans up Cloudinary images & certificate
+    // 8. Delete product -> soft-deletes product/variants and cleans up Cloudinary image, video & certificate with matching resourceType
     const delProdRes = await request(app)
       .delete(`/api/v1/products/${draftProduct.id}`)
       .set('Cookie', cookie);
     assert.equal(delProdRes.status, 200);
-    assert.ok(deletedAssets.includes(certUploadRes.body.data.certificate.publicId));
+    assert.ok(
+      deletedAssets.some(
+        (a) => a.publicId === videoItem.mediaPublicId && a.resourceType === 'video'
+      )
+    );
+    assert.ok(
+      deletedAssets.some(
+        (a) =>
+          a.publicId === certUploadRes.body.data.certificate.publicId &&
+          a.resourceType === 'raw'
+      )
+    );
   });
 
-  it('creates multi-variant product via multipart/form-data, enforces RBAC on stock & catalog updates, and filters product list', async () => {
+  it('creates multi-variant product via multipart/form-data with media[], enforces RBAC on stock & catalog updates, and filters product list', async () => {
     const catalogCookie = await createAndLoginAdmin(ADMIN_ROLES.CATALOG_MANAGER);
     const opsCookie = await createAndLoginAdmin(ADMIN_ROLES.OPERATIONS_MANAGER);
     const modCookie = await createAndLoginAdmin(ADMIN_ROLES.SUPPORT_MODERATOR);
@@ -325,7 +371,8 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
       .post('/api/v1/products')
       .set('Cookie', catalogCookie)
       .field('payload', JSON.stringify(multipartPayload))
-      .attach('images', VALID_PNG_BUFFER, { filename: 'ring.png', contentType: 'image/png' })
+      .attach('media', VALID_PNG_BUFFER, { filename: 'ring.png', contentType: 'image/png' })
+      .attach('media', VALID_MP4_BUFFER, { filename: 'ring-video.mp4', contentType: 'video/mp4' })
       .attach('certificate', VALID_PDF_BUFFER, {
         filename: 'igi-cert.pdf',
         contentType: 'application/pdf',
@@ -336,6 +383,10 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     createdProductIds.add(product.id);
 
     assert.equal(product.productType, 'variant');
+    assert.equal(product.media.length, 2);
+    assert.equal(product.media[0].mediaType, 'image');
+    assert.equal(product.media[0].isPrimary, true);
+    assert.equal(product.media[1].mediaType, 'video');
     assert.equal(product.variants.length, 2);
     assert.equal(product.variants[1].isOutOfStock, true);
     assert.equal(product.variants[1].isPurchasable, false);
@@ -349,6 +400,7 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     assert.equal(listRes.body.data.items[0].minPrice, '16999.00');
     assert.equal(listRes.body.data.items[0].maxPrice, '42000.00');
     assert.equal(listRes.body.data.items[0].totalStock, 1);
+    assert.ok(listRes.body.data.items[0].primaryImage.imageUrl);
 
     // Operations Manager CAN update variant stock (200), but CANNOT edit product details (403)
     const variantId = product.variants[1].id;

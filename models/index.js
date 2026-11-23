@@ -15,14 +15,17 @@ import defineProductModel, {
   ALLOWED_GST_RATES,
 } from './product.model.js';
 import defineProductVariantModel from './productVariant.model.js';
-import defineProductImageModel from './productImage.model.js';
+import defineProductMediaModel, {
+  PRODUCT_MEDIA_TYPES,
+  ALL_PRODUCT_MEDIA_TYPES,
+} from './productMedia.model.js';
 
 const Admin = defineAdminModel(sequelize);
 const AdminRefreshToken = defineAdminRefreshTokenModel(sequelize);
 const Category = defineCategoryModel(sequelize);
 const Product = defineProductModel(sequelize);
 const ProductVariant = defineProductVariantModel(sequelize);
-const ProductImage = defineProductImageModel(sequelize);
+const ProductMedia = defineProductMediaModel(sequelize);
 
 Admin.hasMany(AdminRefreshToken, {
   foreignKey: { name: 'adminId', field: 'admin_id' },
@@ -64,12 +67,12 @@ ProductVariant.belongsTo(Product, {
   as: 'product',
 });
 
-Product.hasMany(ProductImage, {
+Product.hasMany(ProductMedia, {
   foreignKey: { name: 'productId', field: 'product_id' },
-  as: 'images',
+  as: 'media',
 });
 
-ProductImage.belongsTo(Product, {
+ProductMedia.belongsTo(Product, {
   foreignKey: { name: 'productId', field: 'product_id' },
   as: 'product',
 });
@@ -81,7 +84,7 @@ export {
   Category,
   Product,
   ProductVariant,
-  ProductImage,
+  ProductMedia,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -91,6 +94,8 @@ export {
   PRODUCT_STATUSES,
   ALL_PRODUCT_STATUSES,
   ALLOWED_GST_RATES,
+  PRODUCT_MEDIA_TYPES,
+  ALL_PRODUCT_MEDIA_TYPES,
 };
 
 export default {
@@ -100,7 +105,7 @@ export default {
   Category,
   Product,
   ProductVariant,
-  ProductImage,
+  ProductMedia,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -110,4 +115,6 @@ export default {
   PRODUCT_STATUSES,
   ALL_PRODUCT_STATUSES,
   ALLOWED_GST_RATES,
+  PRODUCT_MEDIA_TYPES,
+  ALL_PRODUCT_MEDIA_TYPES,
 };

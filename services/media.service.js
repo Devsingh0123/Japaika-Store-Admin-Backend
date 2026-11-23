@@ -84,6 +84,74 @@ export async function uploadImageBuffer(
   });
 }
 
+export async function uploadProductMediaBuffer(
+  buffer,
+  { mimetype = 'image/png', folder = CLOUDINARY_FOLDERS.PRODUCTS } = {}
+) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new AppError(400, 'INVALID_MEDIA_FILE', 'Product media file buffer is empty or invalid.');
+  }
+
+  if (typeof folder !== 'string' || !folder.startsWith(ALLOWED_CLOUDINARY_PREFIX)) {
+    throw new AppError(
+      500,
+      'INVALID_UPLOAD_FOLDER',
+      `Cloudinary folder must start with "${ALLOWED_CLOUDINARY_PREFIX}".`
+    );
+  }
+
+  if (!hasCloudinaryCredentials()) {
+    throw new AppError(
+      503,
+      'MEDIA_STORAGE_NOT_CONFIGURED',
+      'Cloudinary media storage credentials are not configured.'
+    );
+  }
+
+  const isVideo = typeof mimetype === 'string' && mimetype.startsWith('video/');
+  const mediaType = isVideo ? 'video' : 'image';
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: mediaType,
+      },
+      (err, result) => {
+        if (err || !result?.secure_url || !result?.public_id) {
+          return reject(
+            new AppError(
+              502,
+              'MEDIA_UPLOAD_FAILED',
+              'Failed to upload product media to storage. Please try again.'
+            )
+          );
+        }
+
+        const thumbnailUrl = isVideo
+          ? result.thumbnail_url || result.secure_url.replace(/\.[a-z0-9]+$/i, '.jpg')
+          : null;
+
+        const durationSeconds =
+          isVideo && typeof result.duration === 'number' && Number.isFinite(result.duration)
+            ? Number(result.duration.toFixed(2))
+            : null;
+
+        return resolve({
+          mediaType,
+          mediaUrl: result.secure_url,
+          mediaPublicId: result.public_id,
+          thumbnailUrl,
+          mimeType: mimetype || null,
+          durationSeconds,
+        });
+      }
+    );
+
+    uploadStream.end(buffer);
+  });
+}
+
 export async function uploadCertificateBuffer(
   buffer,
   { mimetype = 'image/png', folder = CLOUDINARY_FOLDERS.CERTIFICATES } = {}
@@ -155,9 +223,12 @@ export async function deleteAssetByPublicId(publicId, { resourceType = 'image' }
     return { deleted: false, reason: 'MEDIA_STORAGE_NOT_CONFIGURED' };
   }
 
+  const normalizedResourceType =
+    resourceType === 'raw' || resourceType === 'video' ? resourceType : 'image';
+
   try {
     const result = await cloudinary.uploader.destroy(normalizedId, {
-      resource_type: resourceType === 'raw' ? 'raw' : 'image',
+      resource_type: normalizedResourceType,
       invalidate: true,
     });
     return { deleted: result?.result === 'ok', reason: result?.result || 'UNKNOWN' };
@@ -178,6 +249,7 @@ const mediaService = {
   CLOUDINARY_FOLDERS,
   isSafeJapaikaEcomPublicId,
   uploadImageBuffer,
+  uploadProductMediaBuffer,
   uploadCertificateBuffer,
   deleteAssetByPublicId,
   deleteImageByPublicId,

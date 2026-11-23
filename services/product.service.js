@@ -5,13 +5,17 @@ import {
   Category,
   Product,
   ProductVariant,
-  ProductImage,
+  ProductMedia,
   PRODUCT_TYPES,
   PRODUCT_STATUSES,
   ALLOWED_GST_RATES,
+  PRODUCT_MEDIA_TYPES,
 } from '../models/index.js';
 import mediaService, { CLOUDINARY_FOLDERS } from './media.service.js';
-import { MAX_PRODUCT_IMAGES } from '../middlewares/upload.middleware.js';
+import {
+  MAX_PRODUCT_MEDIA,
+  ALLOWED_IMAGE_MIME_TYPES,
+} from '../middlewares/upload.middleware.js';
 import { AppError } from '../utils/http.js';
 
 export const PRODUCT_SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -201,20 +205,26 @@ export function sanitizeVariant(variantInstance) {
   };
 }
 
-export function sanitizeImage(imageInstance) {
-  if (!imageInstance) return null;
+export function sanitizeMediaItem(mediaInstance) {
+  if (!mediaInstance) return null;
   const plain =
-    typeof imageInstance.get === 'function'
-      ? imageInstance.get({ plain: true })
-      : imageInstance;
+    typeof mediaInstance.get === 'function'
+      ? mediaInstance.get({ plain: true })
+      : mediaInstance;
 
   const createdAt = plain.created_at ?? plain.createdAt ?? null;
+  const rawDuration = plain.durationSeconds ?? plain.duration_seconds ?? null;
 
   return {
     id: plain.id,
     productId: plain.productId ?? plain.product_id,
-    imageUrl: plain.imageUrl ?? plain.image_url,
-    imagePublicId: plain.imagePublicId ?? plain.image_public_id,
+    mediaType: plain.mediaType ?? plain.media_type ?? PRODUCT_MEDIA_TYPES.IMAGE,
+    mediaUrl: plain.mediaUrl ?? plain.media_url,
+    mediaPublicId: plain.mediaPublicId ?? plain.media_public_id,
+    thumbnailUrl: plain.thumbnailUrl ?? plain.thumbnail_url ?? null,
+    mimeType: plain.mimeType ?? plain.mime_type ?? null,
+    durationSeconds:
+      rawDuration !== null && rawDuration !== undefined ? Number(rawDuration) : null,
     altText: plain.altText ?? plain.alt_text ?? null,
     isPrimary: Boolean(plain.isPrimary ?? plain.is_primary ?? false),
     sortOrder: Number(plain.sortOrder ?? plain.sort_order ?? 0),
@@ -242,9 +252,9 @@ export function sanitizeProductDetail(productInstance) {
       ? productInstance.get({ plain: true })
       : productInstance;
 
-  const images = Array.isArray(plain.images)
-    ? [...plain.images]
-        .map(sanitizeImage)
+  const media = Array.isArray(plain.media)
+    ? [...plain.media]
+        .map(sanitizeMediaItem)
         .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary) || a.sortOrder - b.sortOrder)
     : [];
 
@@ -298,7 +308,7 @@ export function sanitizeProductDetail(productInstance) {
     publishedAt: publishedAt instanceof Date ? publishedAt.toISOString() : publishedAt,
     createdAt: createdAt instanceof Date ? createdAt.toISOString() : createdAt,
     updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt,
-    images,
+    media,
     variants,
   };
 }
@@ -315,11 +325,17 @@ export function sanitizeProductListItem(productInstance) {
     effectivePrices.length > 0 ? Math.max(...effectivePrices).toFixed(2) : '0.00';
   const totalStock = pricePool.reduce((sum, v) => sum + v.stockQuantity, 0);
   const hasLowStock = pricePool.some((v) => v.stockQuantity <= v.lowStockThreshold);
-  const primaryImage = detail.images[0]
+
+  const primaryImageItem =
+    detail.media.find((m) => m.mediaType === PRODUCT_MEDIA_TYPES.IMAGE && m.isPrimary) ||
+    detail.media.find((m) => m.mediaType === PRODUCT_MEDIA_TYPES.IMAGE) ||
+    null;
+
+  const primaryImage = primaryImageItem
     ? {
-        id: detail.images[0].id,
-        imageUrl: detail.images[0].imageUrl,
-        altText: detail.images[0].altText,
+        id: primaryImageItem.id,
+        imageUrl: primaryImageItem.mediaUrl,
+        altText: primaryImageItem.altText,
       }
     : null;
 
@@ -567,7 +583,7 @@ function assertPublishRequirements({
 
   if (imageCount < 1) {
     issues.push({
-      field: 'images',
+      field: 'media',
       message: 'At least one product image is required to publish a product.',
     });
   }
@@ -679,8 +695,8 @@ export async function listProducts({
         required: false,
       },
       {
-        model: ProductImage,
-        as: 'images',
+        model: ProductMedia,
+        as: 'media',
         required: false,
       },
     ],
@@ -727,8 +743,8 @@ export async function getProductById(id) {
         required: false,
       },
       {
-        model: ProductImage,
-        as: 'images',
+        model: ProductMedia,
+        as: 'media',
         required: false,
       },
     ],
@@ -765,14 +781,18 @@ export async function createProduct(payload, files = {}) {
 
   await ensureSkusAvailableInDb(normalizedVariants);
 
-  const imageFiles = Array.isArray(files.images) ? files.images : [];
-  if (imageFiles.length > MAX_PRODUCT_IMAGES) {
+  const mediaFiles = Array.isArray(files.media) ? files.media : [];
+  if (mediaFiles.length > MAX_PRODUCT_MEDIA) {
     throw new AppError(
       400,
       'VALIDATION_ERROR',
-      `A product can have at most ${MAX_PRODUCT_IMAGES} images.`
+      `A product can have at most ${MAX_PRODUCT_MEDIA} media items.`
     );
   }
+
+  const uploadedImageCount = mediaFiles.filter((file) =>
+    ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)
+  ).length;
 
   assertPublishRequirements({
     status,
@@ -780,18 +800,19 @@ export async function createProduct(payload, files = {}) {
     categoryId: payload.categoryId ?? null,
     variantOptions,
     variants: normalizedVariants,
-    imageCount: imageFiles.length,
+    imageCount: uploadedImageCount,
   });
 
-  const uploadedImages = [];
+  const uploadedMedia = [];
   let uploadedCertificate = null;
 
   try {
-    for (const file of imageFiles) {
-      const uploaded = await mediaService.uploadImageBuffer(file.buffer, {
+    for (const file of mediaFiles) {
+      const uploaded = await mediaService.uploadProductMediaBuffer(file.buffer, {
+        mimetype: file.mimetype,
         folder: CLOUDINARY_FOLDERS.PRODUCTS,
       });
-      uploadedImages.push(uploaded);
+      uploadedMedia.push(uploaded);
     }
 
     if (files.certificate?.buffer) {
@@ -863,15 +884,27 @@ export async function createProduct(payload, files = {}) {
         );
       }
 
-      for (let i = 0; i < uploadedImages.length; i += 1) {
-        await ProductImage.create(
+      let primaryAssigned = false;
+      for (let i = 0; i < uploadedMedia.length; i += 1) {
+        const item = uploadedMedia[i];
+        const isPrimary =
+          !primaryAssigned && item.mediaType === PRODUCT_MEDIA_TYPES.IMAGE;
+        if (isPrimary) {
+          primaryAssigned = true;
+        }
+
+        await ProductMedia.create(
           {
             id: crypto.randomUUID(),
             productId,
-            imageUrl: uploadedImages[i].imageUrl,
-            imagePublicId: uploadedImages[i].imagePublicId,
+            mediaType: item.mediaType,
+            mediaUrl: item.mediaUrl,
+            mediaPublicId: item.mediaPublicId,
+            thumbnailUrl: item.thumbnailUrl,
+            mimeType: item.mimeType,
+            durationSeconds: item.durationSeconds,
             altText: payload.name.trim().slice(0, 160),
-            isPrimary: i === 0,
+            isPrimary,
             sortOrder: i,
           },
           { transaction }
@@ -881,8 +914,10 @@ export async function createProduct(payload, files = {}) {
 
     return getProductById(productId);
   } catch (err) {
-    for (const img of uploadedImages) {
-      await mediaService.deleteImageByPublicId(img.imagePublicId);
+    for (const item of uploadedMedia) {
+      await mediaService.deleteAssetByPublicId(item.mediaPublicId, {
+        resourceType: item.mediaType,
+      });
     }
     if (uploadedCertificate?.certificatePublicId) {
       await mediaService.deleteAssetByPublicId(uploadedCertificate.certificatePublicId, {
@@ -906,7 +941,7 @@ export async function updateProduct(id, payload) {
   const product = await Product.findByPk(id, {
     include: [
       { model: ProductVariant, as: 'variants', required: false },
-      { model: ProductImage, as: 'images', required: false },
+      { model: ProductMedia, as: 'media', required: false },
     ],
   });
 
@@ -970,7 +1005,9 @@ export async function updateProduct(id, payload) {
     }));
   }
 
-  const currentImageCount = Array.isArray(product.images) ? product.images.length : 0;
+  const currentImageCount = Array.isArray(product.media)
+    ? product.media.filter((m) => m.mediaType === PRODUCT_MEDIA_TYPES.IMAGE).length
+    : 0;
 
   assertPublishRequirements({
     status: nextStatus,
@@ -1090,7 +1127,7 @@ export async function updateProductStatus(id, { status }) {
   const product = await Product.findByPk(id, {
     include: [
       { model: ProductVariant, as: 'variants', required: false },
-      { model: ProductImage, as: 'images', required: false },
+      { model: ProductMedia, as: 'media', required: false },
     ],
   });
 
@@ -1100,13 +1137,17 @@ export async function updateProductStatus(id, { status }) {
 
   if (status === PRODUCT_STATUSES.ACTIVE) {
     await validateCategoryAssignment(product.categoryId, true);
+    const currentImageCount = (product.media || []).filter(
+      (m) => m.mediaType === PRODUCT_MEDIA_TYPES.IMAGE
+    ).length;
+
     assertPublishRequirements({
       status,
       productType: product.productType,
       categoryId: product.categoryId,
       variantOptions: product.variantOptions,
       variants: product.variants || [],
-      imageCount: (product.images || []).length,
+      imageCount: currentImageCount,
     });
   }
 
@@ -1168,7 +1209,7 @@ export async function deleteProduct(id) {
   const product = await Product.findByPk(id, {
     include: [
       { model: ProductVariant, as: 'variants', required: false },
-      { model: ProductImage, as: 'images', required: false },
+      { model: ProductMedia, as: 'media', required: false },
     ],
   });
 
@@ -1176,9 +1217,13 @@ export async function deleteProduct(id) {
     throw new AppError(404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   }
 
-  const imagePublicIds = (product.images || [])
-    .map((img) => img.imagePublicId)
-    .filter(Boolean);
+  const mediaAssetsToCleanup = (product.media || [])
+    .filter((m) => Boolean(m.mediaPublicId))
+    .map((m) => ({
+      publicId: m.mediaPublicId,
+      resourceType: m.mediaType || PRODUCT_MEDIA_TYPES.IMAGE,
+    }));
+
   const certPublicId = product.certificatePublicId;
   const certResourceType = product.certificateResourceType || 'image';
 
@@ -1188,7 +1233,7 @@ export async function deleteProduct(id) {
       await variant.destroy({ transaction });
     }
 
-    await ProductImage.destroy({
+    await ProductMedia.destroy({
       where: { productId: product.id },
       transaction,
     });
@@ -1205,8 +1250,10 @@ export async function deleteProduct(id) {
     await product.destroy({ transaction });
   });
 
-  for (const pubId of imagePublicIds) {
-    await mediaService.deleteImageByPublicId(pubId);
+  for (const asset of mediaAssetsToCleanup) {
+    await mediaService.deleteAssetByPublicId(asset.publicId, {
+      resourceType: asset.resourceType,
+    });
   }
 
   if (certPublicId) {
@@ -1218,40 +1265,47 @@ export async function deleteProduct(id) {
   return { id: product.id, deleted: true };
 }
 
-export async function addProductImages(productId, files = [], body = {}) {
+export async function addProductMedia(productId, files = [], body = {}) {
   if (!Array.isArray(files) || files.length === 0) {
-    throw new AppError(400, 'INVALID_IMAGE_FILE', 'At least one image file is required.');
+    throw new AppError(
+      400,
+      'INVALID_MEDIA_FILE',
+      'At least one image or short video file is required.'
+    );
   }
 
   const product = await Product.findByPk(productId, {
-    include: [{ model: ProductImage, as: 'images', required: false }],
+    include: [{ model: ProductMedia, as: 'media', required: false }],
   });
 
   if (!product) {
     throw new AppError(404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   }
 
-  const existingImages = product.images || [];
-  if (existingImages.length + files.length > MAX_PRODUCT_IMAGES) {
+  const existingMedia = product.media || [];
+  if (existingMedia.length + files.length > MAX_PRODUCT_MEDIA) {
     throw new AppError(
       400,
       'VALIDATION_ERROR',
-      `A product can have at most ${MAX_PRODUCT_IMAGES} images (currently ${existingImages.length}).`
+      `A product can have at most ${MAX_PRODUCT_MEDIA} media items (currently ${existingMedia.length}).`
     );
   }
 
   const uploaded = [];
   try {
     for (const file of files) {
-      const res = await mediaService.uploadImageBuffer(file.buffer, {
+      const res = await mediaService.uploadProductMediaBuffer(file.buffer, {
+        mimetype: file.mimetype,
         folder: CLOUDINARY_FOLDERS.PRODUCTS,
       });
       uploaded.push(res);
     }
 
-    const hasPrimary = existingImages.some((img) => img.isPrimary);
-    const maxSort = existingImages.reduce(
-      (max, img) => Math.max(max, Number(img.sortOrder || 0)),
+    let hasPrimaryImage = existingMedia.some(
+      (m) => m.isPrimary && m.mediaType === PRODUCT_MEDIA_TYPES.IMAGE
+    );
+    const maxSort = existingMedia.reduce(
+      (max, m) => Math.max(max, Number(m.sortOrder || 0)),
       -1
     );
     const defaultAlt =
@@ -1261,14 +1315,25 @@ export async function addProductImages(productId, files = [], body = {}) {
 
     await sequelize.transaction(async (transaction) => {
       for (let i = 0; i < uploaded.length; i += 1) {
-        await ProductImage.create(
+        const item = uploaded[i];
+        const isPrimary =
+          !hasPrimaryImage && item.mediaType === PRODUCT_MEDIA_TYPES.IMAGE;
+        if (isPrimary) {
+          hasPrimaryImage = true;
+        }
+
+        await ProductMedia.create(
           {
             id: crypto.randomUUID(),
             productId: product.id,
-            imageUrl: uploaded[i].imageUrl,
-            imagePublicId: uploaded[i].imagePublicId,
+            mediaType: item.mediaType,
+            mediaUrl: item.mediaUrl,
+            mediaPublicId: item.mediaPublicId,
+            thumbnailUrl: item.thumbnailUrl,
+            mimeType: item.mimeType,
+            durationSeconds: item.durationSeconds,
             altText: defaultAlt,
-            isPrimary: !hasPrimary && i === 0,
+            isPrimary,
             sortOrder: maxSort + 1 + i,
           },
           { transaction }
@@ -1276,7 +1341,7 @@ export async function addProductImages(productId, files = [], body = {}) {
       }
     });
 
-    const allImages = await ProductImage.findAll({
+    const allMedia = await ProductMedia.findAll({
       where: { productId: product.id },
       order: [
         ['is_primary', 'DESC'],
@@ -1284,34 +1349,48 @@ export async function addProductImages(productId, files = [], body = {}) {
       ],
     });
 
-    return allImages.map(sanitizeImage);
+    return allMedia.map(sanitizeMediaItem);
   } catch (err) {
-    for (const img of uploaded) {
-      await mediaService.deleteImageByPublicId(img.imagePublicId);
+    for (const item of uploaded) {
+      await mediaService.deleteAssetByPublicId(item.mediaPublicId, {
+        resourceType: item.mediaType,
+      });
     }
     throw err;
   }
 }
 
-export async function updateProductImage(productId, imageId, payload) {
+export async function updateProductMedia(productId, mediaId, payload) {
   const product = await Product.findByPk(productId);
   if (!product) {
     throw new AppError(404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   }
 
-  const image = await ProductImage.findOne({
-    where: { id: imageId, productId },
+  const mediaItem = await ProductMedia.findOne({
+    where: { id: mediaId, productId },
   });
 
-  if (!image) {
-    throw new AppError(404, 'IMAGE_NOT_FOUND', 'Product image not found.');
+  if (!mediaItem) {
+    throw new AppError(404, 'MEDIA_NOT_FOUND', 'Product media item not found.');
+  }
+
+  if (
+    payload.isPrimary === true &&
+    mediaItem.mediaType !== PRODUCT_MEDIA_TYPES.IMAGE
+  ) {
+    throw new AppError(
+      400,
+      'VALIDATION_ERROR',
+      'Only image media items can be set as the primary product image.',
+      [{ field: 'isPrimary', message: 'Videos cannot be set as primary product image.' }]
+    );
   }
 
   await sequelize.transaction(async (transaction) => {
     if (payload.isPrimary === true) {
-      await ProductImage.update(
+      await ProductMedia.update(
         { isPrimary: false },
-        { where: { productId, id: { [Op.ne]: imageId } }, transaction }
+        { where: { productId, id: { [Op.ne]: mediaId } }, transaction }
       );
     }
 
@@ -1326,28 +1405,33 @@ export async function updateProductImage(productId, imageId, payload) {
       updates.isPrimary = true;
     }
 
-    await image.update(updates, { transaction });
+    await mediaItem.update(updates, { transaction });
   });
 
-  return sanitizeImage(image);
+  return sanitizeMediaItem(mediaItem);
 }
 
-export async function deleteProductImage(productId, imageId) {
+export async function deleteProductMedia(productId, mediaId) {
   const product = await Product.findByPk(productId, {
-    include: [{ model: ProductImage, as: 'images', required: false }],
+    include: [{ model: ProductMedia, as: 'media', required: false }],
   });
 
   if (!product) {
     throw new AppError(404, 'PRODUCT_NOT_FOUND', 'Product not found.');
   }
 
-  const images = product.images || [];
-  const target = images.find((img) => img.id === imageId);
+  const mediaList = product.media || [];
+  const target = mediaList.find((m) => m.id === mediaId);
   if (!target) {
-    throw new AppError(404, 'IMAGE_NOT_FOUND', 'Product image not found.');
+    throw new AppError(404, 'MEDIA_NOT_FOUND', 'Product media item not found.');
   }
 
-  if (product.status === PRODUCT_STATUSES.ACTIVE && images.length <= 1) {
+  const imageItems = mediaList.filter((m) => m.mediaType === PRODUCT_MEDIA_TYPES.IMAGE);
+  if (
+    product.status === PRODUCT_STATUSES.ACTIVE &&
+    target.mediaType === PRODUCT_MEDIA_TYPES.IMAGE &&
+    imageItems.length <= 1
+  ) {
     throw new AppError(
       400,
       'CANNOT_REMOVE_LAST_IMAGE',
@@ -1355,28 +1439,31 @@ export async function deleteProductImage(productId, imageId) {
     );
   }
 
-  const oldPublicId = target.imagePublicId;
+  const oldPublicId = target.mediaPublicId;
+  const oldMediaType = target.mediaType || PRODUCT_MEDIA_TYPES.IMAGE;
   const wasPrimary = Boolean(target.isPrimary);
 
   await sequelize.transaction(async (transaction) => {
     await target.destroy({ transaction });
 
     if (wasPrimary) {
-      const remaining = images
-        .filter((img) => img.id !== imageId)
+      const remainingImages = imageItems
+        .filter((m) => m.id !== mediaId)
         .sort((a, b) => a.sortOrder - b.sortOrder);
 
-      if (remaining.length > 0) {
-        await remaining[0].update({ isPrimary: true }, { transaction });
+      if (remainingImages.length > 0) {
+        await remainingImages[0].update({ isPrimary: true }, { transaction });
       }
     }
   });
 
   if (oldPublicId) {
-    await mediaService.deleteImageByPublicId(oldPublicId);
+    await mediaService.deleteAssetByPublicId(oldPublicId, {
+      resourceType: oldMediaType,
+    });
   }
 
-  return { id: imageId, deleted: true };
+  return { id: mediaId, deleted: true };
 }
 
 export async function upsertProductCertificate(productId, file = null, payload = {}) {

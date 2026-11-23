@@ -9,7 +9,7 @@ import {
 import requireAdminAuth, { requireRoles } from '../middlewares/auth.middleware.js';
 import {
   uploadProductCreateFiles,
-  uploadProductImages,
+  uploadProductMedia,
   uploadProductCertificate,
 } from '../middlewares/upload.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
@@ -236,7 +236,7 @@ export const updateVariantStockSchema = z
     }
   );
 
-export const updateProductImageSchema = z
+export const updateProductMediaSchema = z
   .object({
     altText: nullableTextField(160, 'Alt text'),
     sortOrder: z.coerce.number().int().min(0).optional(),
@@ -367,29 +367,29 @@ router.delete(
 );
 
 router.post(
-  '/:id/images',
+  '/:id/media',
   requireAdminAuth,
   requireCatalogWriteRole,
   validateUuidParams('id'),
-  uploadProductImages('images', 10),
-  productController.addProductImages
+  uploadProductMedia('media', 10),
+  productController.addProductMedia
 );
 
 router.patch(
-  '/:id/images/:imageId',
+  '/:id/media/:mediaId',
   requireAdminAuth,
   requireCatalogWriteRole,
-  validateUuidParams('id', 'imageId'),
-  validateBody(updateProductImageSchema),
-  productController.updateProductImage
+  validateUuidParams('id', 'mediaId'),
+  validateBody(updateProductMediaSchema),
+  productController.updateProductMedia
 );
 
 router.delete(
-  '/:id/images/:imageId',
+  '/:id/media/:mediaId',
   requireAdminAuth,
   requireCatalogWriteRole,
-  validateUuidParams('id', 'imageId'),
-  productController.deleteProductImage
+  validateUuidParams('id', 'mediaId'),
+  productController.deleteProductMedia
 );
 
 router.put(

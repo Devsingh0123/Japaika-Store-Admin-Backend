@@ -21,7 +21,7 @@ export async function getProductById(req, res) {
 
 export async function createProduct(req, res) {
   const files = {
-    images: req.files?.images || [],
+    media: req.files?.media || [],
     certificate: req.files?.certificate?.[0] || null,
   };
 
@@ -74,8 +74,8 @@ export async function deleteProduct(req, res) {
   });
 }
 
-export async function addProductImages(req, res) {
-  const images = await productService.addProductImages(
+export async function addProductMedia(req, res) {
+  const media = await productService.addProductMedia(
     req.params.id,
     req.files || [],
     req.body || {}
@@ -83,32 +83,32 @@ export async function addProductImages(req, res) {
 
   return sendSuccess(res, {
     statusCode: 201,
-    message: 'Product images uploaded successfully.',
-    data: { images },
+    message: 'Product media uploaded successfully.',
+    data: { media },
   });
 }
 
-export async function updateProductImage(req, res) {
-  const image = await productService.updateProductImage(
+export async function updateProductMedia(req, res) {
+  const mediaItem = await productService.updateProductMedia(
     req.params.id,
-    req.params.imageId,
+    req.params.mediaId,
     req.body
   );
 
   return sendSuccess(res, {
-    message: 'Product image updated successfully.',
-    data: { image },
+    message: 'Product media updated successfully.',
+    data: { mediaItem },
   });
 }
 
-export async function deleteProductImage(req, res) {
-  const result = await productService.deleteProductImage(
+export async function deleteProductMedia(req, res) {
+  const result = await productService.deleteProductMedia(
     req.params.id,
-    req.params.imageId
+    req.params.mediaId
   );
 
   return sendSuccess(res, {
-    message: 'Product image deleted successfully.',
+    message: 'Product media deleted successfully.',
     data: result,
   });
 }

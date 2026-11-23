@@ -4,9 +4,10 @@ import {
   Category,
   Product,
   ProductVariant,
-  ProductImage,
+  ProductMedia,
   ALL_PRODUCT_TYPES,
   ALL_PRODUCT_STATUSES,
+  ALL_PRODUCT_MEDIA_TYPES,
 } from '../../models/index.js';
 import {
   slugifyProduct,
@@ -15,15 +16,18 @@ import {
   buildOptionSignature,
   validateSalePrice,
   validateGstRate,
+  sanitizeMediaItem,
 } from '../../services/product.service.js';
 import { CLOUDINARY_FOLDERS } from '../../services/media.service.js';
 import {
   hasValidPdfSignature,
   hasValidCertificateSignature,
+  hasValidVideoSignature,
+  hasValidProductMediaSignature,
 } from '../../middlewares/upload.middleware.js';
 
-describe('Product, ProductVariant & ProductImage models alignment with DATABASE_SCHEMA.md', () => {
-  it('defines products, product_variants, and product_images with exact snake_case columns and associations', () => {
+describe('Product, ProductVariant & ProductMedia models alignment with DATABASE_SCHEMA.md', () => {
+  it('defines products, product_variants, and product_media with exact snake_case columns and associations', () => {
     assert.equal(Product.getTableName(), 'products');
     assert.equal(Product.options.paranoid, true);
     assert.deepEqual(
@@ -89,30 +93,35 @@ describe('Product, ProductVariant & ProductImage models alignment with DATABASE_
       ]
     );
 
-    assert.equal(ProductImage.getTableName(), 'product_images');
-    assert.equal(ProductImage.options.updatedAt, false);
+    assert.equal(ProductMedia.getTableName(), 'product_media');
+    assert.equal(ProductMedia.options.updatedAt, false);
     assert.deepEqual(
-      Object.values(ProductImage.rawAttributes).map((a) => a.field),
+      Object.values(ProductMedia.rawAttributes).map((a) => a.field),
       [
         'id',
         'product_id',
-        'image_url',
-        'image_public_id',
+        'media_type',
+        'media_url',
+        'media_public_id',
+        'thumbnail_url',
+        'mime_type',
+        'duration_seconds',
         'alt_text',
         'is_primary',
         'sort_order',
         'created_at',
       ]
     );
+    assert.deepEqual(ProductMedia.rawAttributes.mediaType.values, [...ALL_PRODUCT_MEDIA_TYPES]);
 
     assert.ok(Category.associations.products);
     assert.ok(Product.associations.category);
     assert.ok(Product.associations.variants);
-    assert.ok(Product.associations.images);
+    assert.ok(Product.associations.media);
   });
 });
 
-describe('Product slug, SKU, option signature, pricing & GST helpers', () => {
+describe('Product slug, SKU, option signature, pricing, GST & unified media helpers', () => {
   it('generates and validates product slugs and SKUs', () => {
     assert.equal(
       slugifyProduct('  Ceylon Yellow Sapphire (Pukhraj) 5.25 Ratti! '),
@@ -156,16 +165,48 @@ describe('Product slug, SKU, option signature, pricing & GST helpers', () => {
     });
   });
 
-  it('validates PDF and image certificate magic-byte signatures and Cloudinary folders', () => {
+  it('validates image, video (MP4/WebM), and PDF certificate magic-byte signatures and sanitizes media items', () => {
     assert.equal(CLOUDINARY_FOLDERS.PRODUCTS, 'japaika-ecom/products');
     assert.equal(CLOUDINARY_FOLDERS.CERTIFICATES, 'japaika-ecom/certificates');
 
     const pdfBuf = Buffer.from('%PDF-1.7\nsample laboratory certificate', 'ascii');
-    const badBuf = Buffer.from('not a pdf or image file', 'ascii');
+    const mp4Buf = Buffer.from([
+      0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+    ]);
+    const webmBuf = Buffer.from([
+      0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81, 0x01, 0x42, 0xf7, 0x81,
+    ]);
+    const badBuf = Buffer.from('not a pdf, image, or video file', 'ascii');
 
     assert.equal(hasValidPdfSignature(pdfBuf), true);
     assert.equal(hasValidPdfSignature(badBuf), false);
     assert.equal(hasValidCertificateSignature(pdfBuf, 'application/pdf'), true);
     assert.equal(hasValidCertificateSignature(badBuf, 'application/pdf'), false);
+
+    assert.equal(hasValidVideoSignature(mp4Buf, 'video/mp4'), true);
+    assert.equal(hasValidVideoSignature(webmBuf, 'video/webm'), true);
+    assert.equal(hasValidVideoSignature(badBuf, 'video/mp4'), false);
+    assert.equal(hasValidProductMediaSignature(mp4Buf, 'video/mp4'), true);
+    assert.equal(hasValidProductMediaSignature(webmBuf, 'video/webm'), true);
+    assert.equal(hasValidProductMediaSignature(badBuf, 'image/png'), false);
+
+    const sanitizedVideo = sanitizeMediaItem({
+      id: '11111111-1111-4111-8111-111111111111',
+      product_id: '22222222-2222-4222-8222-222222222222',
+      media_type: 'video',
+      media_url: 'https://res.cloudinary.com/demo/video/upload/japaika-ecom/products/vid1.mp4',
+      media_public_id: 'japaika-ecom/products/vid1',
+      thumbnail_url: 'https://res.cloudinary.com/demo/video/upload/japaika-ecom/products/vid1.jpg',
+      mime_type: 'video/mp4',
+      duration_seconds: '12.50',
+      alt_text: '360 gemstone preview',
+      is_primary: false,
+      sort_order: 1,
+      created_at: new Date('2026-11-23T10:00:00.000Z'),
+    });
+
+    assert.equal(sanitizedVideo.mediaType, 'video');
+    assert.equal(sanitizedVideo.durationSeconds, 12.5);
+    assert.equal(sanitizedVideo.isPrimary, false);
   });
 });
