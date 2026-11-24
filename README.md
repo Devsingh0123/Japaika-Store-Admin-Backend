@@ -71,3 +71,10 @@ npm test
 | `DELETE` | `/api/v1/products/:id/media/:mediaId` | `super_admin`, `catalog_manager` | Delete product media item & auto-promote primary image |
 | `PUT` | `/api/v1/products/:id/certificate` | `super_admin`, `catalog_manager` | Upload or replace product certificate (image or PDF in `japaika-ecom/certificates`) |
 | `DELETE` | `/api/v1/products/:id/certificate` | `super_admin`, `catalog_manager` | Remove product certificate & delete Cloudinary asset |
+| `GET` | `/api/v1/banners` | All Active Admin Roles | List homepage banners with pagination, search, placement, active & scheduleStatus filters |
+| `GET` | `/api/v1/banners/:id` | All Active Admin Roles | Get single banner details including desktop/mobile images & schedule status |
+| `POST` | `/api/v1/banners` | `super_admin`, `catalog_manager` | Create banner (`multipart/form-data` with required `image` & optional `mobileImage` in `japaika-ecom/banners`) |
+| `PATCH` | `/api/v1/banners/reorder` | `super_admin`, `catalog_manager` | Atomically update `sortOrder` across multiple banners in one transaction |
+| `PATCH` | `/api/v1/banners/:id` | `super_admin`, `catalog_manager` | Update banner metadata, schedule, CTA, or replace/remove Cloudinary desktop/mobile images |
+| `PATCH` | `/api/v1/banners/:id/status` | `super_admin`, `catalog_manager` | Toggle banner `isActive` status |
+| `DELETE` | `/api/v1/banners/:id` | `super_admin`, `catalog_manager` | Soft-delete banner & clean up desktop/mobile Cloudinary images |

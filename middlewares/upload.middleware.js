@@ -183,6 +183,26 @@ const certificateUpload = multer({
   },
 });
 
+const bannerImagesUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_IMAGE_SIZE_BYTES,
+    files: 2,
+  },
+  fileFilter(_req, file, cb) {
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
+      return cb(
+        new AppError(
+          400,
+          'INVALID_IMAGE_FILE',
+          'Only JPEG, PNG, WebP, and AVIF image files are allowed.'
+        )
+      );
+    }
+    return cb(null, true);
+  },
+});
+
 const productCreateUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -377,6 +397,44 @@ export function uploadProductCreateFiles() {
           req.body = JSON.parse(req.body.payload);
         } catch {
           return next(new AppError(400, 'INVALID_JSON', 'Malformed JSON in multipart payload field.'));
+        }
+      }
+
+      return next();
+    });
+  };
+}
+
+export function uploadBannerImages() {
+  const fieldsMiddleware = bannerImagesUpload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'mobileImage', maxCount: 1 },
+  ]);
+
+  return (req, res, next) => {
+    if (!req.is('multipart/form-data')) {
+      return next();
+    }
+
+    fieldsMiddleware(req, res, (err) => {
+      if (err) {
+        return next(formatMulterError(err, 'INVALID_IMAGE_FILE'));
+      }
+
+      const uploadedFiles = [
+        ...(req.files?.image || []),
+        ...(req.files?.mobileImage || []),
+      ];
+
+      for (const file of uploadedFiles) {
+        if (!hasValidImageSignature(file.buffer)) {
+          return next(
+            new AppError(
+              400,
+              'INVALID_IMAGE_FILE',
+              'Uploaded file content does not match a valid JPEG, PNG, WebP, or AVIF image.'
+            )
+          );
         }
       }
 

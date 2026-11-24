@@ -19,6 +19,10 @@ import defineProductMediaModel, {
   PRODUCT_MEDIA_TYPES,
   ALL_PRODUCT_MEDIA_TYPES,
 } from './productMedia.model.js';
+import defineBannerModel, {
+  BANNER_PLACEMENTS,
+  ALL_BANNER_PLACEMENTS,
+} from './banner.model.js';
 
 const Admin = defineAdminModel(sequelize);
 const AdminRefreshToken = defineAdminRefreshTokenModel(sequelize);
@@ -26,6 +30,7 @@ const Category = defineCategoryModel(sequelize);
 const Product = defineProductModel(sequelize);
 const ProductVariant = defineProductVariantModel(sequelize);
 const ProductMedia = defineProductMediaModel(sequelize);
+const Banner = defineBannerModel(sequelize);
 
 Admin.hasMany(AdminRefreshToken, {
   foreignKey: { name: 'adminId', field: 'admin_id' },
@@ -85,6 +90,7 @@ export {
   Product,
   ProductVariant,
   ProductMedia,
+  Banner,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -96,6 +102,8 @@ export {
   ALLOWED_GST_RATES,
   PRODUCT_MEDIA_TYPES,
   ALL_PRODUCT_MEDIA_TYPES,
+  BANNER_PLACEMENTS,
+  ALL_BANNER_PLACEMENTS,
 };
 
 export default {
@@ -106,6 +114,7 @@ export default {
   Product,
   ProductVariant,
   ProductMedia,
+  Banner,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -117,4 +126,6 @@ export default {
   ALLOWED_GST_RATES,
   PRODUCT_MEDIA_TYPES,
   ALL_PRODUCT_MEDIA_TYPES,
+  BANNER_PLACEMENTS,
+  ALL_BANNER_PLACEMENTS,
 };

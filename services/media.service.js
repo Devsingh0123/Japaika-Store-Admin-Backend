@@ -7,6 +7,7 @@ export const CLOUDINARY_FOLDERS = Object.freeze({
   CATEGORIES: 'japaika-ecom/categories',
   PRODUCTS: 'japaika-ecom/products',
   CERTIFICATES: 'japaika-ecom/certificates',
+  BANNERS: 'japaika-ecom/banners',
 });
 
 function hasCloudinaryCredentials() {
