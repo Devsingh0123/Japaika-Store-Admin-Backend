@@ -14,7 +14,11 @@ import defineProductModel, {
   ALL_PRODUCT_STATUSES,
   ALLOWED_GST_RATES,
 } from './product.model.js';
-import defineProductVariantModel from './productVariant.model.js';
+import defineProductVariantModel, {
+  SUPPORTED_MARKETS,
+  SUPPORTED_COUNTRIES,
+  DEFAULT_COUNTRY,
+} from './productVariant.model.js';
 import defineProductMediaModel, {
   PRODUCT_MEDIA_TYPES,
   ALL_PRODUCT_MEDIA_TYPES,
@@ -102,6 +106,9 @@ export {
   ALLOWED_GST_RATES,
   PRODUCT_MEDIA_TYPES,
   ALL_PRODUCT_MEDIA_TYPES,
+  SUPPORTED_MARKETS,
+  SUPPORTED_COUNTRIES,
+  DEFAULT_COUNTRY,
   BANNER_PLACEMENTS,
   ALL_BANNER_PLACEMENTS,
 };
@@ -126,6 +133,9 @@ export default {
   ALLOWED_GST_RATES,
   PRODUCT_MEDIA_TYPES,
   ALL_PRODUCT_MEDIA_TYPES,
+  SUPPORTED_MARKETS,
+  SUPPORTED_COUNTRIES,
+  DEFAULT_COUNTRY,
   BANNER_PLACEMENTS,
   ALL_BANNER_PLACEMENTS,
 };

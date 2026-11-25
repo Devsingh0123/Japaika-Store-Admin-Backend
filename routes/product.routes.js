@@ -5,6 +5,7 @@ import {
   ALL_PRODUCT_TYPES,
   ALL_PRODUCT_STATUSES,
   ALLOWED_GST_RATES,
+  SUPPORTED_COUNTRIES,
 } from '../models/index.js';
 import requireAdminAuth, { requireRoles } from '../middlewares/auth.middleware.js';
 import {
@@ -97,6 +98,14 @@ const variantOptionItemSchema = z.object({
     .max(30),
 });
 
+const marketPriceEntrySchema = z
+  .object({
+    currency: z.string().trim().min(3).max(3).optional(),
+    price: z.coerce.number().min(0, 'Price must be non-negative.'),
+    salePrice: nullablePositiveDecimalField('Sale price'),
+  })
+  .nullable();
+
 const variantInputSchema = z.object({
   id: z.string().uuid().optional(),
   sku: z.string().trim().max(64).optional(),
@@ -104,8 +113,7 @@ const variantInputSchema = z.object({
   optionValues: z
     .union([z.record(z.string(), z.union([z.string(), z.number()])), z.null()])
     .optional(),
-  price: z.coerce.number().min(0, 'Price must be non-negative.').default(0),
-  salePrice: nullablePositiveDecimalField('Sale price'),
+  prices: z.record(z.string(), marketPriceEntrySchema).optional().default({}),
   stockQuantity: z.coerce.number().int().min(0, 'Stock quantity must be >= 0.').default(0),
   lowStockThreshold: z.coerce
     .number()
@@ -269,6 +277,14 @@ const listProductsQuerySchema = z.object({
   productType: z.enum(ALL_PRODUCT_TYPES).optional(),
   isFeatured: booleanField,
   stockStatus: z.enum(['in_stock', 'low_stock', 'out_of_stock']).optional(),
+  country: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val ? val.toUpperCase() : undefined))
+    .refine((val) => val === undefined || SUPPORTED_COUNTRIES.includes(val), {
+      message: `country filter must be one of: ${SUPPORTED_COUNTRIES.join(', ')}.`,
+    }),
   sortBy: z.enum(['createdAt', 'updatedAt', 'name', 'status']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });

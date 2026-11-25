@@ -59,10 +59,10 @@ npm test
 | `POST` | `/api/v1/categories` | `super_admin`, `catalog_manager` | Create category or subcategory (JSON or `multipart/form-data` with `image`) |
 | `PATCH` | `/api/v1/categories/:id` | `super_admin`, `catalog_manager` | Update category/subcategory or replace/remove Cloudinary image |
 | `DELETE` | `/api/v1/categories/:id` | `super_admin`, `catalog_manager` | Soft-delete category (if no subcategories/products) & delete Cloudinary image |
-| `GET` | `/api/v1/products` | All Active Admin Roles | Paginated product list with search, status, category, type, featured & stock filters |
-| `GET` | `/api/v1/products/:id` | All Active Admin Roles | Full product detail with category, variants, unified `media` (images & videos), certificate & shipping |
-| `POST` | `/api/v1/products` | `super_admin`, `catalog_manager` | Single-page product creation (Save Draft or Publish; JSON or `multipart/form-data` with `media` & `certificate`) |
-| `PATCH` | `/api/v1/products/:id` | `super_admin`, `catalog_manager` | Update product metadata, specifications, variant options & variants |
+| `GET` | `/api/v1/products` | All Active Admin Roles | Paginated product list with search, status, category, type, featured, `stockStatus`, & `country` (`IN` \| `US`) filters and `priceSummary` |
+| `GET` | `/api/v1/products/:id` | All Active Admin Roles | Full product detail with category, variants (`prices` by country `IN`/`US`), unified `media` (images & videos), certificate & shipping |
+| `POST` | `/api/v1/products` | `super_admin`, `catalog_manager` | Single-page product creation with regional `IN`/`US` pricing (Save Draft or Publish; JSON or `multipart/form-data` with `media` & `certificate`) |
+| `PATCH` | `/api/v1/products/:id` | `super_admin`, `catalog_manager` | Update product metadata, specifications, variant options & variants (including `IN`/`US` `prices`) |
 | `PATCH` | `/api/v1/products/:id/status` | `super_admin`, `catalog_manager` | Transition product status (`draft`, `active`, `archived`) with publish validation |
 | `PATCH` | `/api/v1/products/:id/variants/:variantId/stock` | `super_admin`, `catalog_manager`, `operations_manager` | Update variant stock quantity, low-stock threshold, or active toggle |
 | `DELETE` | `/api/v1/products/:id` | `super_admin`, `catalog_manager` | Soft-delete product & variants and clean up Cloudinary media (`image` / `video`) & certificate |

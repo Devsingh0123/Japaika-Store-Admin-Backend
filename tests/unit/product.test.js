@@ -8,13 +8,17 @@ import {
   ALL_PRODUCT_TYPES,
   ALL_PRODUCT_STATUSES,
   ALL_PRODUCT_MEDIA_TYPES,
+  SUPPORTED_MARKETS,
+  SUPPORTED_COUNTRIES,
+  DEFAULT_COUNTRY,
 } from '../../models/index.js';
 import {
   slugifyProduct,
   resolveAndValidateProductSlug,
   normalizeSku,
   buildOptionSignature,
-  validateSalePrice,
+  normalizeAndValidatePrices,
+  sanitizeVariant,
   validateGstRate,
   sanitizeMediaItem,
 } from '../../services/product.service.js';
@@ -27,7 +31,7 @@ import {
 } from '../../middlewares/upload.middleware.js';
 
 describe('Product, ProductVariant & ProductMedia models alignment with DATABASE_SCHEMA.md', () => {
-  it('defines products, product_variants, and product_media with exact snake_case columns and associations', () => {
+  it('defines products, product_variants (prices JSON), and product_media with exact snake_case columns and associations', () => {
     assert.equal(Product.getTableName(), 'products');
     assert.equal(Product.options.paranoid, true);
     assert.deepEqual(
@@ -80,8 +84,7 @@ describe('Product, ProductVariant & ProductMedia models alignment with DATABASE_
         'title',
         'option_values',
         'option_signature',
-        'price',
-        'sale_price',
+        'prices',
         'stock_quantity',
         'low_stock_threshold',
         'is_active',
@@ -92,6 +95,11 @@ describe('Product, ProductVariant & ProductMedia models alignment with DATABASE_
         'deleted_at',
       ]
     );
+
+    assert.equal(SUPPORTED_MARKETS.IN.currency, 'INR');
+    assert.equal(SUPPORTED_MARKETS.US.currency, 'USD');
+    assert.deepEqual(SUPPORTED_COUNTRIES, ['IN', 'US']);
+    assert.equal(DEFAULT_COUNTRY, 'IN');
 
     assert.equal(ProductMedia.getTableName(), 'product_media');
     assert.equal(ProductMedia.options.updatedAt, false);
@@ -121,7 +129,7 @@ describe('Product, ProductVariant & ProductMedia models alignment with DATABASE_
   });
 });
 
-describe('Product slug, SKU, option signature, pricing, GST & unified media helpers', () => {
+describe('Product slug, SKU, option signature, regional pricing, GST & unified media helpers', () => {
   it('generates and validates product slugs and SKUs', () => {
     assert.equal(
       slugifyProduct('  Ceylon Yellow Sapphire (Pukhraj) 5.25 Ratti! '),
@@ -139,7 +147,7 @@ describe('Product slug, SKU, option signature, pricing, GST & unified media help
     assert.match(normalizeSku('', 'pukhraj', 0), /^JPK-PUKHRAJ-1[A-F0-9]{6}$/);
   });
 
-  it('builds deterministic option signatures and validates sale prices and GST slabs', () => {
+  it('validates regional prices (IN/INR & US/USD), omits null entries, and rejects invalid currencies or sale prices', () => {
     assert.equal(buildOptionSignature('simple', null), 'default');
     assert.equal(
       buildOptionSignature('variant', { Size: '14', Metal: 'Silver' }),
@@ -149,14 +157,76 @@ describe('Product slug, SKU, option signature, pricing, GST & unified media help
       code: 'VALIDATION_ERROR',
     });
 
-    assert.equal(validateSalePrice(15000, null), null);
-    assert.equal(validateSalePrice(15000, 12999), 12999);
-    assert.throws(() => validateSalePrice(15000, 15000), {
-      code: 'INVALID_SALE_PRICE',
+    assert.deepEqual(normalizeAndValidatePrices({}), {});
+    assert.deepEqual(normalizeAndValidatePrices(null), {});
+
+    // Dual-market + currency inference + null entry removal
+    assert.deepEqual(
+      normalizeAndValidatePrices({
+        in: { price: 20000, salePrice: 18000 },
+        US: { currency: 'USD', price: 280 },
+      }),
+      {
+        IN: { currency: 'INR', price: 20000, salePrice: 18000 },
+        US: { currency: 'USD', price: 280, salePrice: null },
+      }
+    );
+
+    // Single-market US-only + null IN omission
+    assert.deepEqual(
+      normalizeAndValidatePrices({
+        IN: null,
+        US: { currency: 'USD', price: 150, salePrice: 120 },
+      }),
+      {
+        US: { currency: 'USD', price: 150, salePrice: 120 },
+      }
+    );
+
+    // Unsupported country
+    assert.throws(() => normalizeAndValidatePrices({ UK: { price: 100 } }), {
+      code: 'VALIDATION_ERROR',
     });
-    assert.throws(() => validateSalePrice(15000, 0), {
-      code: 'INVALID_SALE_PRICE',
+
+    // Currency mismatch
+    assert.throws(
+      () => normalizeAndValidatePrices({ IN: { currency: 'USD', price: 100 } }),
+      { code: 'VALIDATION_ERROR' }
+    );
+
+    // Invalid sale prices
+    assert.throws(
+      () => normalizeAndValidatePrices({ IN: { currency: 'INR', price: 15000, salePrice: 15000 } }),
+      { code: 'INVALID_SALE_PRICE' }
+    );
+    assert.throws(
+      () => normalizeAndValidatePrices({ US: { currency: 'USD', price: 200, salePrice: 0 } }),
+      { code: 'INVALID_SALE_PRICE' }
+    );
+
+    // Sanitized variant computes per-market effectivePrice and omits flat price fields
+    const sanitized = sanitizeVariant({
+      id: '11111111-1111-4111-8111-111111111111',
+      product_id: '22222222-2222-4222-8222-222222222222',
+      sku: 'JPK-PUKH-1',
+      prices: JSON.stringify({
+        IN: { currency: 'INR', price: 20000, salePrice: 18000 },
+        US: { currency: 'USD', price: 280, salePrice: null },
+      }),
+      stock_quantity: 5,
+      low_stock_threshold: 2,
+      is_active: true,
+      is_default: true,
+      sort_order: 0,
     });
+
+    assert.deepEqual(sanitized.prices, {
+      IN: { currency: 'INR', price: 20000, salePrice: 18000, effectivePrice: 18000 },
+      US: { currency: 'USD', price: 280, salePrice: null, effectivePrice: 280 },
+    });
+    assert.equal('price' in sanitized, false);
+    assert.equal('salePrice' in sanitized, false);
+    assert.equal('effectivePrice' in sanitized, false);
 
     assert.equal(validateGstRate(3), 3);
     assert.equal(validateGstRate(0.25), 0.25);

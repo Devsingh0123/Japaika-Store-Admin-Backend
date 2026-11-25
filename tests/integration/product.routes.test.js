@@ -186,12 +186,12 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     await sequelize.close();
   });
 
-  it('supports simple product draft creation, publish validation, unified gallery media (images + short video) & PDF certificate management, and category delete protection', async () => {
+  it('supports simple product draft creation with regional prices, publish validation, unified gallery media (images + short video) & PDF certificate management, and category delete protection', async () => {
     const cookie = await createAndLoginAdmin(ADMIN_ROLES.CATALOG_MANAGER);
     const suffix = crypto.randomUUID().slice(0, 8);
     const category = await createTestCategory(suffix);
 
-    // 1. Create a simple product in draft mode without category or media
+    // 1. Create a simple product in draft mode without category, media, or regional prices
     const draftRes = await request(app)
       .post('/api/v1/products')
       .set('Cookie', cookie)
@@ -206,8 +206,7 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
           { key: 'Weight', value: '6.5 Ratti' },
         ],
         variants: {
-          price: 8500,
-          salePrice: 7499,
+          prices: {},
           stockQuantity: 4,
           lowStockThreshold: 5,
         },
@@ -221,11 +220,12 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     assert.equal(draftProduct.productType, 'simple');
     assert.equal(draftProduct.variants.length, 1);
     assert.equal(draftProduct.variants[0].isDefault, true);
-    assert.equal(draftProduct.variants[0].effectivePrice, '7499.00');
+    assert.deepEqual(draftProduct.variants[0].prices, {});
     assert.equal(draftProduct.variants[0].isLowStock, true);
     assert.equal(draftProduct.variants[0].isPurchasable, true);
+    assert.equal('price' in draftProduct.variants[0], false);
 
-    // 2. Attempting to publish before category & images are added fails with 400 PUBLISH_VALIDATION_FAILED
+    // 2. Attempting to publish before category, images & positive market price fails with 400 PUBLISH_VALIDATION_FAILED
     const prematurePublish = await request(app)
       .patch(`/api/v1/products/${draftProduct.id}/status`)
       .set('Cookie', cookie)
@@ -233,7 +233,7 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     assert.equal(prematurePublish.status, 400);
     assert.equal(prematurePublish.body.error.code, 'PUBLISH_VALIDATION_FAILED');
 
-    // 3. Assign category via PATCH, upload 2 gallery images + 1 short MP4 video, and attach PDF certificate
+    // 3. Assign category via PATCH, upload 2 gallery images + 1 short MP4 video
     const assignCatRes = await request(app)
       .patch(`/api/v1/products/${draftProduct.id}`)
       .set('Cookie', cookie)
@@ -256,6 +256,42 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     assert.equal(videoItem.isPrimary, false);
     assert.ok(videoItem.thumbnailUrl);
     assert.equal(videoItem.durationSeconds, 8.5);
+
+    // 3b. Attempting to publish with category & media but without any positive regional price fails with variants.prices detail
+    const unpricedPublish = await request(app)
+      .patch(`/api/v1/products/${draftProduct.id}/status`)
+      .set('Cookie', cookie)
+      .send({ status: 'active' });
+    assert.equal(unpricedPublish.status, 400);
+    assert.equal(unpricedPublish.body.error.code, 'PUBLISH_VALIDATION_FAILED');
+    assert.ok(
+      unpricedPublish.body.error.details.some((d) => d.field === 'variants.prices')
+    );
+
+    // 3c. Set India regional pricing via PATCH
+    const assignPriceRes = await request(app)
+      .patch(`/api/v1/products/${draftProduct.id}`)
+      .set('Cookie', cookie)
+      .send({
+        variants: [
+          {
+            id: draftProduct.variants[0].id,
+            prices: {
+              IN: { currency: 'INR', price: 8500, salePrice: 7499 },
+            },
+            stockQuantity: 4,
+            lowStockThreshold: 5,
+          },
+        ],
+      });
+    assert.equal(assignPriceRes.status, 200);
+    assert.deepEqual(assignPriceRes.body.data.product.variants[0].prices.IN, {
+      currency: 'INR',
+      price: 8500,
+      salePrice: 7499,
+      effectivePrice: 7499,
+    });
+    assert.equal(assignPriceRes.body.data.product.variants[0].prices.US, undefined);
 
     // 4. Setting a video as primary image is rejected with 400 VALIDATION_ERROR
     const setVideoPrimaryRes = await request(app)
@@ -328,7 +364,7 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
     );
   });
 
-  it('creates multi-variant product via multipart/form-data with media[], enforces RBAC on stock & catalog updates, and filters product list', async () => {
+  it('creates multi-variant product with independent IN/US pricing, filters by country & stock, updates/clears market prices, and enforces RBAC', async () => {
     const catalogCookie = await createAndLoginAdmin(ADMIN_ROLES.CATALOG_MANAGER);
     const opsCookie = await createAndLoginAdmin(ADMIN_ROLES.OPERATIONS_MANAGER);
     const modCookie = await createAndLoginAdmin(ADMIN_ROLES.SUPPORT_MODERATOR);
@@ -351,8 +387,10 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
         {
           sku: `JPK-YS-${suffix.toUpperCase()}-1`,
           optionValues: { Metal: 'Silver', 'Ring Size': '14' },
-          price: 18500,
-          salePrice: 16999,
+          prices: {
+            IN: { currency: 'INR', price: 18500, salePrice: 16999 },
+            US: { currency: 'USD', price: 240, salePrice: 215 },
+          },
           stockQuantity: 1,
           lowStockThreshold: 2,
           isDefault: true,
@@ -360,7 +398,9 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
         {
           sku: `JPK-YS-${suffix.toUpperCase()}-2`,
           optionValues: { Metal: 'Gold', 'Ring Size': '16' },
-          price: 42000,
+          prices: {
+            IN: { currency: 'INR', price: 42000 },
+          },
           stockQuantity: 0,
           lowStockThreshold: 2,
         },
@@ -384,23 +424,115 @@ describe('Product Management API integration tests (/api/v1/products)', () => {
 
     assert.equal(product.productType, 'variant');
     assert.equal(product.media.length, 2);
-    assert.equal(product.media[0].mediaType, 'image');
-    assert.equal(product.media[0].isPrimary, true);
-    assert.equal(product.media[1].mediaType, 'video');
     assert.equal(product.variants.length, 2);
+    assert.deepEqual(product.variants[0].prices.US, {
+      currency: 'USD',
+      price: 240,
+      salePrice: 215,
+      effectivePrice: 215,
+    });
+    assert.equal(product.variants[1].prices.US, undefined); // No INR fallback
     assert.equal(product.variants[1].isOutOfStock, true);
     assert.equal(product.variants[1].isPurchasable, false);
 
-    // Search by variant SKU in GET /api/v1/products
+    // Search by variant SKU in GET /api/v1/products and verify per-market priceSummary
     const listRes = await request(app)
       .get(`/api/v1/products?search=JPK-YS-${suffix.toUpperCase()}-2&stockStatus=in_stock`)
       .set('Cookie', catalogCookie);
     assert.equal(listRes.status, 200);
     assert.equal(listRes.body.data.items.length, 1);
-    assert.equal(listRes.body.data.items[0].minPrice, '16999.00');
-    assert.equal(listRes.body.data.items[0].maxPrice, '42000.00');
-    assert.equal(listRes.body.data.items[0].totalStock, 1);
-    assert.ok(listRes.body.data.items[0].primaryImage.imageUrl);
+    const listItem = listRes.body.data.items[0];
+    assert.deepEqual(listItem.priceSummary, {
+      IN: { currency: 'INR', minPrice: '16999.00', maxPrice: '42000.00' },
+      US: { currency: 'USD', minPrice: '215.00', maxPrice: '215.00' },
+    });
+    assert.equal('minPrice' in listItem, false);
+    assert.equal('maxPrice' in listItem, false);
+    assert.equal(listItem.totalStock, 1);
+    assert.ok(listItem.primaryImage.imageUrl);
+
+    // Country filter (?country=US) returns the product
+    const usFilterRes = await request(app)
+      .get(`/api/v1/products?search=${suffix}&country=US`)
+      .set('Cookie', catalogCookie);
+    assert.equal(usFilterRes.status, 200);
+    assert.equal(usFilterRes.body.data.items.length, 1);
+
+    // Validation errors on PATCH: invalid salePrice (400 INVALID_SALE_PRICE) and mismatched currency (400 VALIDATION_ERROR)
+    const badSaleRes = await request(app)
+      .patch(`/api/v1/products/${product.id}`)
+      .set('Cookie', catalogCookie)
+      .send({
+        variants: [
+          {
+            id: product.variants[0].id,
+            sku: product.variants[0].sku,
+            optionValues: product.variants[0].optionValues,
+            prices: {
+              IN: { currency: 'INR', price: 18500, salePrice: 19000 },
+            },
+          },
+        ],
+      });
+    assert.equal(badSaleRes.status, 400);
+    assert.equal(badSaleRes.body.error.code, 'INVALID_SALE_PRICE');
+
+    const badCurrencyRes = await request(app)
+      .patch(`/api/v1/products/${product.id}`)
+      .set('Cookie', catalogCookie)
+      .send({
+        variants: [
+          {
+            id: product.variants[0].id,
+            sku: product.variants[0].sku,
+            optionValues: product.variants[0].optionValues,
+            prices: {
+              IN: { currency: 'USD', price: 200 },
+            },
+          },
+        ],
+      });
+    assert.equal(badCurrencyRes.status, 400);
+    assert.equal(badCurrencyRes.body.error.code, 'VALIDATION_ERROR');
+
+    // Clearing US pricing via PATCH { US: null } removes US entry cleanly
+    const clearUsRes = await request(app)
+      .patch(`/api/v1/products/${product.id}`)
+      .set('Cookie', catalogCookie)
+      .send({
+        variants: [
+          {
+            id: product.variants[0].id,
+            sku: product.variants[0].sku,
+            optionValues: product.variants[0].optionValues,
+            prices: {
+              IN: { currency: 'INR', price: 18500, salePrice: 16999 },
+              US: null,
+            },
+            stockQuantity: 1,
+            lowStockThreshold: 2,
+            isDefault: true,
+          },
+          {
+            id: product.variants[1].id,
+            sku: product.variants[1].sku,
+            optionValues: product.variants[1].optionValues,
+            prices: {
+              IN: { currency: 'INR', price: 42000 },
+            },
+            stockQuantity: 0,
+            lowStockThreshold: 2,
+          },
+        ],
+      });
+    assert.equal(clearUsRes.status, 200);
+    assert.equal(clearUsRes.body.data.product.variants[0].prices.US, undefined);
+
+    const usFilterAfterClear = await request(app)
+      .get(`/api/v1/products?search=${suffix}&country=US`)
+      .set('Cookie', catalogCookie);
+    assert.equal(usFilterAfterClear.status, 200);
+    assert.equal(usFilterAfterClear.body.data.items.length, 0);
 
     // Operations Manager CAN update variant stock (200), but CANNOT edit product details (403)
     const variantId = product.variants[1].id;

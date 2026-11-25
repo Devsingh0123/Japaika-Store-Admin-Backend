@@ -10,6 +10,8 @@ import {
   PRODUCT_STATUSES,
   ALLOWED_GST_RATES,
   PRODUCT_MEDIA_TYPES,
+  SUPPORTED_MARKETS,
+  SUPPORTED_COUNTRIES,
 } from '../models/index.js';
 import mediaService, { CLOUDINARY_FOLDERS } from './media.service.js';
 import {
@@ -112,26 +114,122 @@ export function buildOptionSignature(productType, optionValues) {
   return signature;
 }
 
-export function validateSalePrice(price, salePrice) {
-  const regular = Number(price ?? 0);
-  if (!Number.isFinite(regular) || regular < 0) {
-    throw new AppError(400, 'VALIDATION_ERROR', 'Variant price must be a non-negative number.');
+function parseJsonField(value, fallback) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return value;
+}
+
+export function normalizeAndValidatePrices(rawPrices) {
+  if (rawPrices === null || rawPrices === undefined) {
+    return {};
   }
 
-  if (salePrice === null || salePrice === undefined || salePrice === '') {
-    return null;
-  }
-
-  const sale = Number(salePrice);
-  if (!Number.isFinite(sale) || sale <= 0 || sale >= regular) {
+  const parsed = typeof rawPrices === 'string' ? parseJsonField(rawPrices, null) : rawPrices;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new AppError(
       400,
-      'INVALID_SALE_PRICE',
-      'Sale price must be greater than 0 and strictly less than regular price.'
+      'VALIDATION_ERROR',
+      'Variant prices must be an object keyed by country code.',
+      [{ field: 'variants.prices', message: 'Invalid prices object.' }]
     );
   }
 
-  return Number(sale.toFixed(2));
+  const normalized = {};
+
+  for (const [rawCountry, rawEntry] of Object.entries(parsed)) {
+    const country = String(rawCountry || '').trim().toUpperCase();
+    const market = SUPPORTED_MARKETS[country];
+
+    if (!market) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `Unsupported pricing country "${rawCountry}". Supported countries: ${SUPPORTED_COUNTRIES.join(', ')}.`,
+        [{ field: `prices.${rawCountry}`, message: 'Unsupported market country.' }]
+      );
+    }
+
+    if (rawEntry === null || rawEntry === undefined) {
+      continue;
+    }
+
+    if (typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `Pricing entry for ${country} must be an object.`,
+        [{ field: `prices.${country}`, message: 'Invalid market pricing object.' }]
+      );
+    }
+
+    if (
+      rawEntry.currency !== undefined &&
+      rawEntry.currency !== null &&
+      String(rawEntry.currency).trim() !== ''
+    ) {
+      const currency = String(rawEntry.currency).trim().toUpperCase();
+      if (currency !== market.currency) {
+        throw new AppError(
+          400,
+          'VALIDATION_ERROR',
+          `Currency for ${country} must be ${market.currency}.`,
+          [{ field: `prices.${country}.currency`, message: `Expected ${market.currency}.` }]
+        );
+      }
+    }
+
+    const rawPrice = rawEntry.price;
+    const price = Number(rawPrice);
+    if (
+      rawPrice === undefined ||
+      rawPrice === null ||
+      rawPrice === '' ||
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `Regular price for ${country} must be a non-negative number.`,
+        [{ field: `prices.${country}.price`, message: 'Invalid regular price.' }]
+      );
+    }
+
+    const roundedPrice = Number(price.toFixed(2));
+    let salePrice = null;
+
+    if (
+      rawEntry.salePrice !== null &&
+      rawEntry.salePrice !== undefined &&
+      rawEntry.salePrice !== ''
+    ) {
+      const sale = Number(rawEntry.salePrice);
+      if (!Number.isFinite(sale) || sale <= 0 || sale >= roundedPrice) {
+        throw new AppError(
+          400,
+          'INVALID_SALE_PRICE',
+          `Sale price for ${country} must be greater than 0 and strictly less than regular price.`,
+          [{ field: `prices.${country}.salePrice`, message: 'Invalid sale price.' }]
+        );
+      }
+      salePrice = Number(sale.toFixed(2));
+    }
+
+    normalized[country] = {
+      currency: market.currency,
+      price: roundedPrice,
+      salePrice,
+    };
+  }
+
+  return normalized;
 }
 
 export function validateGstRate(gstRate) {
@@ -160,14 +258,33 @@ export function sanitizeVariant(variantInstance) {
       ? variantInstance.get({ plain: true })
       : variantInstance;
 
-  const price = formatMoney(plain.price ?? 0);
-  const salePrice =
-    plain.salePrice !== null && plain.salePrice !== undefined
-      ? formatMoney(plain.salePrice)
-      : plain.sale_price !== null && plain.sale_price !== undefined
-        ? formatMoney(plain.sale_price)
+  const rawPrices = parseJsonField(plain.prices, {});
+  const prices = {};
+
+  for (const country of SUPPORTED_COUNTRIES) {
+    const entry = rawPrices?.[country];
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+
+    const price = Number(Number(entry.price ?? 0).toFixed(2));
+    const rawSale =
+      entry.salePrice !== null && entry.salePrice !== undefined && entry.salePrice !== ''
+        ? Number(Number(entry.salePrice).toFixed(2))
         : null;
-  const effectivePrice = salePrice !== null ? salePrice : price;
+    const salePrice =
+      rawSale !== null && Number.isFinite(rawSale) && rawSale > 0 && rawSale < price
+        ? rawSale
+        : null;
+    const effectivePrice = salePrice !== null ? salePrice : price;
+
+    prices[country] = {
+      currency: SUPPORTED_MARKETS[country].currency,
+      price,
+      salePrice,
+      effectivePrice,
+    };
+  }
 
   const stockQuantity = Number(plain.stockQuantity ?? plain.stock_quantity ?? 0);
   const lowStockThreshold = Number(
@@ -187,11 +304,9 @@ export function sanitizeVariant(variantInstance) {
     productId: plain.productId ?? plain.product_id,
     sku: plain.sku,
     title: plain.title ?? null,
-    optionValues: plain.optionValues ?? plain.option_values ?? null,
+    optionValues: parseJsonField(plain.optionValues ?? plain.option_values, null),
     optionSignature: plain.optionSignature ?? plain.option_signature ?? null,
-    price,
-    salePrice,
-    effectivePrice,
+    prices,
     stockQuantity,
     lowStockThreshold,
     isActive,
@@ -290,8 +405,8 @@ export function sanitizeProductDetail(productInstance) {
       plain.traditionalSignificance ?? plain.traditional_significance ?? null,
     wearingInstructions: plain.wearingInstructions ?? plain.wearing_instructions ?? null,
     careInstructions: plain.careInstructions ?? plain.care_instructions ?? null,
-    specifications: plain.specifications ?? [],
-    variantOptions: plain.variantOptions ?? plain.variant_options ?? null,
+    specifications: parseJsonField(plain.specifications, []),
+    variantOptions: parseJsonField(plain.variantOptions ?? plain.variant_options, null),
     gstRate: formatMoney(plain.gstRate ?? plain.gst_rate ?? 0),
     hsnCode: plain.hsnCode ?? plain.hsn_code ?? null,
     certificate: sanitizeCertificate(plain),
@@ -317,12 +432,23 @@ export function sanitizeProductListItem(productInstance) {
   const detail = sanitizeProductDetail(productInstance);
   const activeVariants = detail.variants.filter((v) => v.isActive);
   const pricePool = activeVariants.length > 0 ? activeVariants : detail.variants;
-  const effectivePrices = pricePool.map((v) => Number(v.effectivePrice || 0));
 
-  const minPrice =
-    effectivePrices.length > 0 ? Math.min(...effectivePrices).toFixed(2) : '0.00';
-  const maxPrice =
-    effectivePrices.length > 0 ? Math.max(...effectivePrices).toFixed(2) : '0.00';
+  const priceSummary = {};
+  for (const country of SUPPORTED_COUNTRIES) {
+    const marketPrices = pricePool
+      .map((v) => v.prices?.[country])
+      .filter((entry) => entry && Number(entry.price) > 0)
+      .map((entry) => Number(entry.effectivePrice));
+
+    if (marketPrices.length > 0) {
+      priceSummary[country] = {
+        currency: SUPPORTED_MARKETS[country].currency,
+        minPrice: Math.min(...marketPrices).toFixed(2),
+        maxPrice: Math.max(...marketPrices).toFixed(2),
+      };
+    }
+  }
+
   const totalStock = pricePool.reduce((sum, v) => sum + v.stockQuantity, 0);
   const hasLowStock = pricePool.some((v) => v.stockQuantity <= v.lowStockThreshold);
 
@@ -353,8 +479,7 @@ export function sanitizeProductListItem(productInstance) {
     hsnCode: detail.hsnCode,
     isFeatured: detail.isFeatured,
     variantCount: detail.variants.length,
-    minPrice,
-    maxPrice,
+    priceSummary,
     totalStock,
     hasLowStock,
     publishedAt: detail.publishedAt,
@@ -422,8 +547,7 @@ function normalizeAndValidateVariantsInput({
           ? variantsInput
           : {};
 
-    const price = Number(raw.price ?? 0);
-    const salePrice = validateSalePrice(price, raw.salePrice);
+    const prices = normalizeAndValidatePrices(raw.prices);
 
     return [
       {
@@ -432,8 +556,7 @@ function normalizeAndValidateVariantsInput({
         title: raw.title ? String(raw.title).trim() : 'Default',
         optionValues: null,
         optionSignature: 'default',
-        price: Number(price.toFixed(2)),
-        salePrice,
+        prices,
         stockQuantity: Number(raw.stockQuantity ?? 0),
         lowStockThreshold: Number(raw.lowStockThreshold ?? 5),
         isActive: raw.isActive !== undefined ? Boolean(raw.isActive) : true,
@@ -496,8 +619,7 @@ function normalizeAndValidateVariantsInput({
       }
     }
 
-    const price = Number(raw.price ?? 0);
-    const salePrice = validateSalePrice(price, raw.salePrice);
+    const prices = normalizeAndValidatePrices(raw.prices);
     const autoTitle =
       raw.title && String(raw.title).trim()
         ? String(raw.title).trim()
@@ -509,8 +631,7 @@ function normalizeAndValidateVariantsInput({
       title: autoTitle.slice(0, 160),
       optionValues: raw.optionValues,
       optionSignature: signature,
-      price: Number(price.toFixed(2)),
-      salePrice,
+      prices,
       stockQuantity: Number(raw.stockQuantity ?? 0),
       lowStockThreshold: Number(raw.lowStockThreshold ?? 5),
       isActive: raw.isActive !== undefined ? Boolean(raw.isActive) : true,
@@ -607,10 +728,15 @@ function assertPublishRequirements({
   }
 
   for (const v of activeVariants) {
-    if (Number(v.price) <= 0) {
+    const variantPrices = parseJsonField(v.prices, {});
+    const hasPositiveMarketPrice = SUPPORTED_COUNTRIES.some(
+      (code) => Number(variantPrices?.[code]?.price) > 0
+    );
+
+    if (!hasPositiveMarketPrice) {
       issues.push({
-        field: 'variants.price',
-        message: `Active variant "${v.sku}" must have a regular price greater than 0 to publish.`,
+        field: 'variants.prices',
+        message: `Active variant "${v.sku}" must have a regular price greater than 0 for at least one supported market (${SUPPORTED_COUNTRIES.join(', ')}) to publish.`,
       });
     }
   }
@@ -634,6 +760,7 @@ export async function listProducts({
   productType,
   isFeatured,
   stockStatus,
+  country,
   sortBy = 'createdAt',
   sortOrder = 'desc',
 } = {}) {
@@ -704,6 +831,10 @@ export async function listProducts({
   });
 
   let items = allMatches.map(sanitizeProductListItem);
+
+  if (country) {
+    items = items.filter((item) => Boolean(item.priceSummary?.[country]));
+  }
 
   if (stockStatus === 'out_of_stock') {
     items = items.filter((item) => item.totalStock === 0);
@@ -872,8 +1003,7 @@ export async function createProduct(payload, files = {}) {
             title: variant.title,
             optionValues: variant.optionValues,
             optionSignature: variant.optionSignature,
-            price: variant.price,
-            salePrice: variant.salePrice,
+            prices: variant.prices,
             stockQuantity: variant.stockQuantity,
             lowStockThreshold: variant.lowStockThreshold,
             isActive: variant.isActive,
@@ -977,7 +1107,7 @@ export async function updateProduct(id, payload) {
       ? null
       : payload.variantOptions !== undefined
         ? payload.variantOptions
-        : product.variantOptions;
+        : parseJsonField(product.variantOptions, null);
 
   let normalizedVariants;
   if (payload.variants !== undefined) {
@@ -995,8 +1125,7 @@ export async function updateProduct(id, payload) {
       title: v.title,
       optionValues: v.optionValues,
       optionSignature: v.optionSignature,
-      price: Number(v.price),
-      salePrice: v.salePrice !== null ? Number(v.salePrice) : null,
+      prices: parseJsonField(v.prices, {}),
       stockQuantity: Number(v.stockQuantity),
       lowStockThreshold: Number(v.lowStockThreshold),
       isActive: Boolean(v.isActive),
@@ -1086,8 +1215,7 @@ export async function updateProduct(id, payload) {
               title: variant.title,
               optionValues: variant.optionValues,
               optionSignature: variant.optionSignature,
-              price: variant.price,
-              salePrice: variant.salePrice,
+              prices: variant.prices,
               stockQuantity: variant.stockQuantity,
               lowStockThreshold: variant.lowStockThreshold,
               isActive: variant.isActive,
@@ -1105,8 +1233,7 @@ export async function updateProduct(id, payload) {
               title: variant.title,
               optionValues: variant.optionValues,
               optionSignature: variant.optionSignature,
-              price: variant.price,
-              salePrice: variant.salePrice,
+              prices: variant.prices,
               stockQuantity: variant.stockQuantity,
               lowStockThreshold: variant.lowStockThreshold,
               isActive: variant.isActive,
@@ -1145,7 +1272,7 @@ export async function updateProductStatus(id, { status }) {
       status,
       productType: product.productType,
       categoryId: product.categoryId,
-      variantOptions: product.variantOptions,
+      variantOptions: parseJsonField(product.variantOptions, null),
       variants: product.variants || [],
       imageCount: currentImageCount,
     });
