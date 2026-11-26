@@ -27,6 +27,10 @@ import defineBannerModel, {
   BANNER_PLACEMENTS,
   ALL_BANNER_PLACEMENTS,
 } from './banner.model.js';
+import defineCouponModel, {
+  COUPON_VISIBILITIES,
+  ALL_COUPON_VISIBILITIES,
+} from './coupon.model.js';
 
 const Admin = defineAdminModel(sequelize);
 const AdminRefreshToken = defineAdminRefreshTokenModel(sequelize);
@@ -35,6 +39,7 @@ const Product = defineProductModel(sequelize);
 const ProductVariant = defineProductVariantModel(sequelize);
 const ProductMedia = defineProductMediaModel(sequelize);
 const Banner = defineBannerModel(sequelize);
+const Coupon = defineCouponModel(sequelize);
 
 Admin.hasMany(AdminRefreshToken, {
   foreignKey: { name: 'adminId', field: 'admin_id' },
@@ -95,6 +100,7 @@ export {
   ProductVariant,
   ProductMedia,
   Banner,
+  Coupon,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -111,6 +117,8 @@ export {
   DEFAULT_COUNTRY,
   BANNER_PLACEMENTS,
   ALL_BANNER_PLACEMENTS,
+  COUPON_VISIBILITIES,
+  ALL_COUPON_VISIBILITIES,
 };
 
 export default {
@@ -122,6 +130,7 @@ export default {
   ProductVariant,
   ProductMedia,
   Banner,
+  Coupon,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -138,4 +147,6 @@ export default {
   DEFAULT_COUNTRY,
   BANNER_PLACEMENTS,
   ALL_BANNER_PLACEMENTS,
+  COUPON_VISIBILITIES,
+  ALL_COUPON_VISIBILITIES,
 };

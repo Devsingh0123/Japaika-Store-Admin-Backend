@@ -78,3 +78,9 @@ npm test
 | `PATCH` | `/api/v1/banners/:id` | `super_admin`, `catalog_manager` | Update banner metadata, schedule, CTA, or replace/remove Cloudinary desktop/mobile images |
 | `PATCH` | `/api/v1/banners/:id/status` | `super_admin`, `catalog_manager` | Toggle banner `isActive` status |
 | `DELETE` | `/api/v1/banners/:id` | `super_admin`, `catalog_manager` | Soft-delete banner & clean up desktop/mobile Cloudinary images |
+| `GET` | `/api/v1/coupons` | All Active Admin Roles | List coupons with pagination, search, `visibility` (`public` \| `hidden`), `isActive`, & `status` filters |
+| `GET` | `/api/v1/coupons/:id` | All Active Admin Roles | Get single coupon details including regional `INR`/`USD` thresholds |
+| `POST` | `/api/v1/coupons` | `super_admin`, `catalog_manager` | Create percentage coupon (mandatory `INR`/`USD` minimums, optional paired caps, limit, expiry, & `public` \| `hidden` visibility) |
+| `PATCH` | `/api/v1/coupons/:id` | `super_admin`, `catalog_manager` | Update coupon configuration (locks `code` once `redemptionCount > 0`) |
+| `PATCH` | `/api/v1/coupons/:id/status` | `super_admin`, `catalog_manager` | Activate or deactivate coupon (`isActive`) |
+| `DELETE` | `/api/v1/coupons/:id` | `super_admin`, `catalog_manager` | Soft-delete coupon (`isActive = false`, `deleted_at = NOW()`) |
