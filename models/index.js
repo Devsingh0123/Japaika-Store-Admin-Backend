@@ -31,6 +31,19 @@ import defineCouponModel, {
   COUPON_VISIBILITIES,
   ALL_COUPON_VISIBILITIES,
 } from './coupon.model.js';
+import defineUserModel from './user.model.js';
+import defineShippingSettingModel from './shippingSetting.model.js';
+import defineOrderModel, {
+  ORDER_STATUSES,
+  ALL_ORDER_STATUSES,
+  PAYMENT_METHODS,
+  ALL_PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+  ALL_PAYMENT_STATUSES,
+  CANCELLED_BY_ACTORS,
+  ALL_CANCELLED_BY_ACTORS,
+} from './order.model.js';
+import defineOrderItemModel from './orderItem.model.js';
 
 const Admin = defineAdminModel(sequelize);
 const AdminRefreshToken = defineAdminRefreshTokenModel(sequelize);
@@ -40,6 +53,10 @@ const ProductVariant = defineProductVariantModel(sequelize);
 const ProductMedia = defineProductMediaModel(sequelize);
 const Banner = defineBannerModel(sequelize);
 const Coupon = defineCouponModel(sequelize);
+const User = defineUserModel(sequelize);
+const ShippingSetting = defineShippingSettingModel(sequelize);
+const Order = defineOrderModel(sequelize);
+const OrderItem = defineOrderItemModel(sequelize);
 
 Admin.hasMany(AdminRefreshToken, {
   foreignKey: { name: 'adminId', field: 'admin_id' },
@@ -91,6 +108,36 @@ ProductMedia.belongsTo(Product, {
   as: 'product',
 });
 
+User.hasMany(Order, {
+  foreignKey: { name: 'userId', field: 'user_id' },
+  as: 'orders',
+});
+
+Order.belongsTo(User, {
+  foreignKey: { name: 'userId', field: 'user_id' },
+  as: 'user',
+});
+
+Coupon.hasMany(Order, {
+  foreignKey: { name: 'couponId', field: 'coupon_id' },
+  as: 'orders',
+});
+
+Order.belongsTo(Coupon, {
+  foreignKey: { name: 'couponId', field: 'coupon_id' },
+  as: 'coupon',
+});
+
+Order.hasMany(OrderItem, {
+  foreignKey: { name: 'orderId', field: 'order_id' },
+  as: 'items',
+});
+
+OrderItem.belongsTo(Order, {
+  foreignKey: { name: 'orderId', field: 'order_id' },
+  as: 'order',
+});
+
 export {
   sequelize,
   Admin,
@@ -101,6 +148,10 @@ export {
   ProductMedia,
   Banner,
   Coupon,
+  User,
+  ShippingSetting,
+  Order,
+  OrderItem,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -119,6 +170,14 @@ export {
   ALL_BANNER_PLACEMENTS,
   COUPON_VISIBILITIES,
   ALL_COUPON_VISIBILITIES,
+  ORDER_STATUSES,
+  ALL_ORDER_STATUSES,
+  PAYMENT_METHODS,
+  ALL_PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+  ALL_PAYMENT_STATUSES,
+  CANCELLED_BY_ACTORS,
+  ALL_CANCELLED_BY_ACTORS,
 };
 
 export default {
@@ -131,6 +190,10 @@ export default {
   ProductMedia,
   Banner,
   Coupon,
+  User,
+  ShippingSetting,
+  Order,
+  OrderItem,
   ADMIN_ROLES,
   ALL_ADMIN_ROLES,
   ADMIN_STATUSES,
@@ -149,4 +212,12 @@ export default {
   ALL_BANNER_PLACEMENTS,
   COUPON_VISIBILITIES,
   ALL_COUPON_VISIBILITIES,
+  ORDER_STATUSES,
+  ALL_ORDER_STATUSES,
+  PAYMENT_METHODS,
+  ALL_PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+  ALL_PAYMENT_STATUSES,
+  CANCELLED_BY_ACTORS,
+  ALL_CANCELLED_BY_ACTORS,
 };

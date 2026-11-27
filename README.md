@@ -14,7 +14,7 @@ Administrative and operations REST API for the standalone Japaika E-commerce pla
    ```
 
 2. **Configure environment variables**:
-   Create `.env` (using `.env.example` as a reference) with your local MySQL credentials (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`), admin JWT secrets (`ADMIN_JWT_ACCESS_SECRET`, `ADMIN_JWT_REFRESH_SECRET`), and Cloudinary credentials (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`).
+   Create `.env` (using `.env.example` as a reference) with your local MySQL credentials (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`), admin JWT secrets (`ADMIN_JWT_ACCESS_SECRET`, `ADMIN_JWT_REFRESH_SECRET`), Cloudinary credentials (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`), and Razorpay credentials (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` for gateway refunds and payment sync).
 
 3. **Ensure shared MySQL migrations are applied** (from `../user-backend/`):
    ```bash
@@ -84,3 +84,16 @@ npm test
 | `PATCH` | `/api/v1/coupons/:id` | `super_admin`, `catalog_manager` | Update coupon configuration (locks `code` once `redemptionCount > 0`) |
 | `PATCH` | `/api/v1/coupons/:id/status` | `super_admin`, `catalog_manager` | Activate or deactivate coupon (`isActive`) |
 | `DELETE` | `/api/v1/coupons/:id` | `super_admin`, `catalog_manager` | Soft-delete coupon (`isActive = false`, `deleted_at = NOW()`) |
+| `GET` | `/api/v1/shipping-settings` | All Active Admin Roles | List regional shipping settings (`IN` / `INR`, `US` / `USD`) |
+| `GET` | `/api/v1/shipping-settings/:country` | All Active Admin Roles | Get shipping settings for a specific country (`IN` \| `US`) |
+| `PATCH` | `/api/v1/shipping-settings/:country` | `super_admin`, `operations_manager` | Update regional flat charge, free-shipping threshold, ETA days range & active status |
+| `PATCH` | `/api/v1/shipping-settings/:country/status` | `super_admin`, `operations_manager` | Activate or deactivate shipping for a country (`isActive`) |
+| `GET` | `/api/v1/orders/summary` | `super_admin`, `operations_manager`, `support_moderator` | Operational order counts & currency-separated (`INR` / `USD`) paid revenue KPIs |
+| `GET` | `/api/v1/orders` | `super_admin`, `operations_manager`, `support_moderator` | Paginated order list with search, status, paymentStatus, paymentMethod, country & date filters |
+| `GET` | `/api/v1/orders/:id` | `super_admin`, `operations_manager`, `support_moderator` | Full order detail snapshot (by UUID or `orderNumber`) with customer, items & allowed transitions |
+| `PATCH` | `/api/v1/orders/:id/status` | `super_admin`, `operations_manager` | Advance fulfillment status (`confirmed` → `processing` → `packed` → `shipped` → `delivered`) |
+| `PATCH` | `/api/v1/orders/:id/tracking` | `super_admin`, `operations_manager` | Update courier partner, AWB number & `http(s)://` tracking URL |
+| `PATCH` | `/api/v1/orders/:id/payment-status` | `super_admin`, `operations_manager` | Controlled payment status transitions (`pending` / `failed` / `paid` / `refund_pending`) |
+| `POST` | `/api/v1/orders/:id/sync-payment` | `super_admin`, `operations_manager` | Reconcile payment status against Razorpay Orders Payments API |
+| `POST` | `/api/v1/orders/:id/cancel` | `super_admin`, `operations_manager` | Cancel pre-shipment order with reason, atomic stock/coupon restoration & `paid → refund_pending` |
+| `POST` | `/api/v1/orders/:id/refund` | `super_admin`, `operations_manager` | Execute live Razorpay refund or record manual full/partial refund with concurrency guard |

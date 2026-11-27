@@ -8,6 +8,8 @@ import categoryRoutes from './routes/category.routes.js';
 import productRoutes from './routes/product.routes.js';
 import bannerRoutes from './routes/banner.routes.js';
 import couponRoutes from './routes/coupon.routes.js';
+import shippingSettingRoutes from './routes/shippingSetting.routes.js';
+import orderRoutes from './routes/order.routes.js';
 import { notFoundHandler, errorHandler } from './middlewares/error.middleware.js';
 import { sendSuccess, sendError } from './utils/http.js';
 
@@ -48,6 +50,8 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/banners', bannerRoutes);
 app.use('/api/v1/coupons', couponRoutes);
+app.use('/api/v1/shipping-settings', shippingSettingRoutes);
+app.use('/api/v1/orders', orderRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
